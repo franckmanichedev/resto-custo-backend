@@ -33,21 +33,33 @@ const getAllowedOrigins = () => ([
     'http://192.168.43.95:3000'
 ].filter(Boolean));
 
+const getPublicBaseUrl = () => {
+    if (process.env.RENDER_EXTERNAL_URL) {
+        return process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '');
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+        return 'https://resto-custo-backend.onrender.com';
+    }
+
+    return `http://localhost:${PORT}`;
+};
+
 // =====================================================
 // MIDDLEWARES GLOBAUX
 // =====================================================
 
-// Configuration CORS flexible pour développement
+// Configuration CORS flexible pour developpement
 const corsOptions = {
     origin: function (origin, callback) {
         const allowedOrigins = [...new Set(getAllowedOrigins())];
 
-        // En développement, permettre toutes les origines locales
+        // En developpement, permettre toutes les origines locales
         if (process.env.NODE_ENV === 'development') {
             return callback(null, true);
         }
 
-        // En production, vérifier l'origine
+        // En production, verifier l'origine
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
@@ -92,7 +104,7 @@ app.get('/api/health', (req, res) => {
 // ERROR HANDLING MIDDLEWARE
 // =====================================================
 app.use((err, req, res, next) => {
-    logger.error('Unhandled error', { 
+    logger.error('Unhandled error', {
         error: err.message,
         stack: err.stack,
         path: req.path,
@@ -111,15 +123,16 @@ app.use((req, res) => {
     logger.warn('Route not found', { path: req.path, method: req.method });
     res.status(404).json({
         success: false,
-        message: 'Route non trouvée'
+        message: 'Route non trouvee'
     });
 });
 
 // =====================================================
-// DÉMARRAGE DU SERVEUR
+// DEMARRAGE DU SERVEUR
 // =====================================================
 app.listen(PORT, () => {
-    logger.info(`🚀 Server lancé sur http://localhost:${PORT}`);
+    logger.info(`Server listening on ${getPublicBaseUrl()}`);
+    logger.info(`API URL: ${getPublicBaseUrl()}/api`);
     logger.info(`Frontend URL: ${getFrontendUrl()}`);
 });
 
