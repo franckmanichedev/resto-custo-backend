@@ -124,6 +124,36 @@ const validateRequestedDay = (day) => {
     return normalized;
 };
 
+const normalizeCartLineItems = (payload) => {
+    if (Array.isArray(payload.line_items) && payload.line_items.length > 0) {
+        const normalizedLineItems = payload.line_items
+            .filter((item) => item && typeof item === 'object')
+            .map((item) => ({
+                quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+                composition_actions: Array.isArray(item.composition_actions) ? item.composition_actions : []
+            }));
+
+        if (!normalizedLineItems.length) {
+            const error = new Error('line_items doit contenir au moins une personnalisation valide');
+            error.status = 400;
+            throw error;
+        }
+
+        return normalizedLineItems;
+    }
+
+    if (!isNonEmptyString(payload.plat_id) || typeof payload.quantity !== 'number' || payload.quantity < 1) {
+        const error = new Error('plat_id et quantity >= 1 sont requis');
+        error.status = 400;
+        throw error;
+    }
+
+    return Array.from({ length: payload.quantity }, () => ({
+        quantity: 1,
+        composition_actions: Array.isArray(payload.composition_actions) ? payload.composition_actions : []
+    }));
+};
+
 const getPlatCompositions = async (platId) => {
     const linksSnap = await db
         .collection(PLAT_COMPOSITION_COLLECTION)
@@ -749,11 +779,12 @@ exports.addCartItem = async (req, res) => {
     try {
         const session = await getValidatedSession(req.body.session_token);
         const currentDay = getCurrentWeekDay();
+        const normalizedLineItems = normalizeCartLineItems(req.body);
 
-        if (!isNonEmptyString(req.body.plat_id) || typeof req.body.quantity !== 'number' || req.body.quantity < 1) {
+        if (!isNonEmptyString(req.body.plat_id)) {
             return res.status(400).json({
                 success: false,
-                message: 'plat_id et quantity >= 1 sont requis'
+                message: 'plat_id est requis'
             });
         }
 
@@ -775,37 +806,38 @@ exports.addCartItem = async (req, res) => {
 
         const cart = await getOrCreateActiveCartForSession(session);
         const now = new Date().toISOString();
-        const itemRef = db.collection(CART_ITEM_COLLECTION).doc();
-        const item = {
-            id: itemRef.id,
-            panier_id: cart.id,
-            plat_id: plat.id,
-            plat_name: plat.name,
-            plat_price: plat.price,
-            quantity: req.body.quantity,
-            created_at: now,
-            updated_at: now,
-            createdAt: now,
-            updatedAt: now
-        };
-
-        await itemRef.set(item);
-
-        const compositionActions = Array.isArray(req.body.composition_actions) ? req.body.composition_actions : [];
-        for (const action of compositionActions) {
-            if (!isNonEmptyString(action.composition_id) || !isNonEmptyString(action.action)) {
-                continue;
-            }
-
-            const actionRef = db.collection(CART_ITEM_COMPOSITION_COLLECTION).doc();
-            await actionRef.set({
-                id: actionRef.id,
-                panier_item_id: item.id,
-                composition_id: action.composition_id.trim(),
-                action: action.action.trim().toLowerCase(),
+        for (const lineItem of normalizedLineItems) {
+            const itemRef = db.collection(CART_ITEM_COLLECTION).doc();
+            const item = {
+                id: itemRef.id,
+                panier_id: cart.id,
+                plat_id: plat.id,
+                plat_name: plat.name,
+                plat_price: plat.price,
+                quantity: lineItem.quantity,
                 created_at: now,
-                createdAt: now
-            });
+                updated_at: now,
+                createdAt: now,
+                updatedAt: now
+            };
+
+            await itemRef.set(item);
+
+            for (const action of lineItem.composition_actions) {
+                if (!isNonEmptyString(action.composition_id) || !isNonEmptyString(action.action)) {
+                    continue;
+                }
+
+                const actionRef = db.collection(CART_ITEM_COMPOSITION_COLLECTION).doc();
+                await actionRef.set({
+                    id: actionRef.id,
+                    panier_item_id: item.id,
+                    composition_id: action.composition_id.trim(),
+                    action: action.action.trim().toLowerCase(),
+                    created_at: now,
+                    createdAt: now
+                });
+            }
         }
 
         await db.collection(CART_COLLECTION).doc(cart.id).update({
@@ -815,7 +847,7 @@ exports.addCartItem = async (req, res) => {
 
         return res.status(201).json({
             success: true,
-            message: 'Plat ajoute au panier',
+            message: `${normalizedLineItems.length} item(s) ajoute(s) au panier`,
             data: {
                 cart: await buildCartSummary(await getOrCreateActiveCartForSession(session))
             }

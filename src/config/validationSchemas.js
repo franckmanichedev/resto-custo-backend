@@ -1,5 +1,6 @@
 const MAX_NOTE_LENGTH = 500;
 const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const MENU_ITEM_CATEGORIES = ['plat', 'boisson', 'entree'];
 
 const isPlainObject = (value) =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -296,6 +297,21 @@ const validatePlatInput = (payload, { isUpdate = false } = {}) => {
         }
     } else if (!isUpdate) {
         data.image_url = '';
+    }
+
+    if (payload.category !== undefined) {
+        if (!isNonEmptyString(payload.category)) {
+            addError(errors, 'category', 'category est requis');
+        } else {
+            const normalizedCategory = payload.category.trim().toLowerCase();
+            if (!MENU_ITEM_CATEGORIES.includes(normalizedCategory)) {
+                addError(errors, 'category', `category doit etre une des valeurs suivantes: ${MENU_ITEM_CATEGORIES.join(', ')}`);
+            } else {
+                data.category = normalizedCategory;
+            }
+        }
+    } else if (!isUpdate) {
+        data.category = 'plat';
     }
 
     if (payload.is_promo !== undefined) {

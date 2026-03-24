@@ -5,6 +5,7 @@ module.exports = {
     price: 0,
     prep_time: 0,
     image_url: "",
+    category: "plat",
     is_promo: false,
     is_available: true,
     availability_mode: "everyday",

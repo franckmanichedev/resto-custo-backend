@@ -25,14 +25,17 @@ const isFirebaseConfigured = () => {
 
 let admin_initialized = false;
 let db = null;
+let storageBucket = null;
 
 // Initialiser Firebase seulement si les credentials sont présentes
 if (isFirebaseConfigured()) {
     try {
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount),
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET,
         });
         db = admin.firestore();
+        storageBucket = admin.storage().bucket();
         admin_initialized = true;
     } catch (error) {
         console.error('Erreur lors de l\'initialisation Firebase:', error.message);
@@ -51,4 +54,4 @@ if (isFirebaseConfigured()) {
     }
 }
 
-module.exports = { admin, db };
+module.exports = { admin, db, storageBucket };

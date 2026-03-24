@@ -70,10 +70,7 @@ exports.createUserWithEmail = async (req, res) => {
             name, 
             phoneNumber,
             passwordConfirm,
-            role, 
-            bio,
-            location,
-            languages
+            role,
         } = req.body;
 
         logger.debug('Données parsées', {

@@ -1,9 +1,11 @@
-const { db } = require('../config/firebase');
+const crypto = require('crypto');
+const { db, storageBucket } = require('../config/firebase');
 const logger = require('../utils/logger');
 
 const PLAT_COLLECTION = 'plats';
 const COMPOSITION_COLLECTION = 'compositions';
 const PLAT_COMPOSITION_COLLECTION = 'plat_compositions';
+const DEFAULT_CATEGORY = 'plat';
 
 const normalizeCompositionName = (value = '') =>
     value
@@ -16,6 +18,40 @@ const serializeDoc = (doc) => ({
     id: doc.id,
     ...doc.data()
 });
+
+const buildStorageFileUrl = (filePath, token) =>
+    `https://firebasestorage.googleapis.com/v0/b/${storageBucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
+
+const uploadPlatImage = async (file, platId) => {
+    if (!file) {
+        return '';
+    }
+
+    if (!storageBucket) {
+        const error = new Error('Firebase Storage n est pas configure');
+        error.status = 500;
+        throw error;
+    }
+
+    const safeName = (file.originalname || 'image')
+        .replace(/[^a-zA-Z0-9.\-_]/g, '-')
+        .replace(/-+/g, '-');
+    const token = crypto.randomUUID();
+    const filePath = `plats/${platId}/${Date.now()}-${safeName}`;
+    const storageFile = storageBucket.file(filePath);
+
+    await storageFile.save(file.buffer, {
+        resumable: false,
+        metadata: {
+            contentType: file.mimetype,
+            metadata: {
+                firebaseStorageDownloadTokens: token
+            }
+        }
+    });
+
+    return buildStorageFileUrl(filePath, token);
+};
 
 const getCurrentWeekDay = () => {
     const formatter = new Intl.DateTimeFormat('en-US', {
@@ -159,6 +195,7 @@ const buildPlatResponse = async (platDoc) => {
 
     return {
         ...data,
+        category: data.category || DEFAULT_CATEGORY,
         is_available: data.is_available !== false,
         availability_mode: data.availability_mode || 'everyday',
         available_days: Array.isArray(data.available_days) ? data.available_days : [],
@@ -173,6 +210,9 @@ exports.createPlat = async (req, res) => {
         const now = new Date().toISOString();
         const platRef = db.collection(PLAT_COLLECTION).doc();
         const compositionSelections = req.body.compositionSelections || [];
+        const imageUrl = req.file
+            ? await uploadPlatImage(req.file, platRef.id)
+            : (req.body.image_url || '');
 
         const plat = {
             id: platRef.id,
@@ -180,7 +220,8 @@ exports.createPlat = async (req, res) => {
             description: req.body.description || '',
             price: req.body.price,
             prep_time: req.body.prep_time || 0,
-            image_url: req.body.image_url || '',
+            image_url: imageUrl,
+            category: req.body.category || DEFAULT_CATEGORY,
             is_promo: req.body.is_promo || false,
             is_available: req.body.is_available !== false,
             availability_mode: req.body.availability_mode || 'everyday',
@@ -217,6 +258,9 @@ exports.createPlat = async (req, res) => {
 exports.listPlats = async (req, res) => {
     try {
         const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+        const categoryFilter = typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+        const sortBy = typeof req.query.sort_by === 'string' ? req.query.sort_by.trim().toLowerCase() : 'created_at';
+        const sortOrder = req.query.sort_order === 'asc' ? 'asc' : 'desc';
         const onlyDecomposable = req.query.is_decomposable === 'true';
         const availableFilter = req.query.is_available;
         const availableToday = req.query.available_today === 'true';
@@ -235,6 +279,10 @@ exports.listPlats = async (req, res) => {
             });
         }
 
+        if (categoryFilter) {
+            plats = plats.filter((plat) => (plat.category || DEFAULT_CATEGORY) === categoryFilter);
+        }
+
         if (onlyDecomposable) {
             plats = plats.filter((plat) => plat.compositions.length > 0 || plat.is_decomposable === true);
         }
@@ -248,6 +296,34 @@ exports.listPlats = async (req, res) => {
         if (availableToday) {
             plats = plats.filter((plat) => plat.is_available_today === true);
         }
+
+        const compareValues = (left, right) => {
+            if (typeof left === 'number' && typeof right === 'number') {
+                return left - right;
+            }
+
+            return String(left || '').localeCompare(String(right || ''), 'fr', { sensitivity: 'base' });
+        };
+
+        plats.sort((a, b) => {
+            let comparison = 0;
+
+            if (sortBy === 'name') {
+                comparison = compareValues(a.name, b.name);
+            } else if (sortBy === 'price') {
+                comparison = compareValues(Number(a.price || 0), Number(b.price || 0));
+            } else if (sortBy === 'category') {
+                comparison = compareValues(a.category || DEFAULT_CATEGORY, b.category || DEFAULT_CATEGORY)
+                    || compareValues(a.name, b.name);
+            } else {
+                comparison = compareValues(
+                    new Date(a.createdAt || 0).getTime(),
+                    new Date(b.createdAt || 0).getTime()
+                );
+            }
+
+            return sortOrder === 'asc' ? comparison : -comparison;
+        });
 
         return res.status(200).json({
             success: true,
@@ -305,6 +381,10 @@ exports.updatePlat = async (req, res) => {
             ...req.body,
             updatedAt: new Date().toISOString()
         };
+
+        if (req.file) {
+            updates.image_url = await uploadPlatImage(req.file, req.params.id);
+        }
 
         delete updates.compositionSelections;
 
