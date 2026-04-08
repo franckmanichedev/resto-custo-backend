@@ -7,6 +7,7 @@ const logger = require('./utils/logger');
 const authRoutes = require('./routes/authRoutes');
 const platRoutes = require('./routes/platRoute');
 const compositionRoutes = require('./routes/compositionRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
 const tableRoutes = require('./routes/tableRoutes');
 const frontOfficeRoutes = require('./routes/frontOfficeRoutes');
 const orderRoutes = require('./routes/orderRoutes');
@@ -91,6 +92,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/plats', platRoutes);
 app.use('/api/compositions', compositionRoutes);
+app.use('/api/categories', categoryRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/front-office', frontOfficeRoutes);
 app.use('/api/orders', orderRoutes);

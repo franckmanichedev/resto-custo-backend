@@ -2,9 +2,11 @@ const { db } = require('../config/firebase');
 const logger = require('../utils/logger');
 
 const TABLE_COLLECTION = 'tables';
-const PLAT_COLLECTION = 'plats';
+const MENU_ITEM_COLLECTION = 'menu_items';
 const COMPOSITION_COLLECTION = 'compositions';
-const PLAT_COMPOSITION_COLLECTION = 'plat_compositions';
+const MENU_ITEM_COMPOSITION_COLLECTION = 'menu_item_compositions';
+const CATEGORY_COLLECTION = 'categories';
+const TYPE_CATEGORY_COLLECTION = 'type_categories';
 
 const serializeDoc = (doc) => ({
     id: doc.id,
@@ -46,10 +48,10 @@ const isPlatAvailableForDay = (plat, day = getCurrentWeekDay()) => {
     return Array.isArray(plat.available_days) && plat.available_days.includes(day);
 };
 
-const getPlatCompositions = async (platId) => {
+const getMenuItemCompositions = async (menuItemId) => {
     const linksSnap = await db
-        .collection(PLAT_COMPOSITION_COLLECTION)
-        .where('plat_id', '==', platId)
+        .collection(MENU_ITEM_COMPOSITION_COLLECTION)
+        .where('menu_item_id', '==', menuItemId)
         .get();
 
     if (linksSnap.empty) {
@@ -74,12 +76,33 @@ const getPlatCompositions = async (platId) => {
     return compositionIds.map((compositionId) => compositionMap.get(compositionId)).filter(Boolean);
 };
 
+const getCategoryDetails = async (menuItem) => {
+    const [categoryDoc, typeCategoryDoc] = await Promise.all([
+        menuItem.categorie_id ? db.collection(CATEGORY_COLLECTION).doc(menuItem.categorie_id).get() : null,
+        menuItem.type_categorie_id ? db.collection(TYPE_CATEGORY_COLLECTION).doc(menuItem.type_categorie_id).get() : null
+    ]);
+
+    return {
+        category: categoryDoc?.exists ? serializeDoc(categoryDoc) : null,
+        typeCategory: typeCategoryDoc?.exists ? serializeDoc(typeCategoryDoc) : null
+    };
+};
+
 const buildPlatResponse = async (platDoc) => {
     const plat = serializeDoc(platDoc);
-    const compositions = await getPlatCompositions(plat.id);
+    const compositions = await getMenuItemCompositions(plat.id);
+    const taxonomy = await getCategoryDetails(plat);
+    const kind = String(plat.kind || plat.category || plat.legacy_category || 'plat').trim().toLowerCase() === 'boisson'
+        ? 'boisson'
+        : 'plat';
 
     return {
         ...plat,
+        kind,
+        categorie_name: taxonomy.category?.name || plat.categorie_name || plat.category || plat.legacy_category || kind,
+        type_categorie_name: taxonomy.typeCategory?.name || plat.type_categorie_name || null,
+        category_details: taxonomy.category,
+        type_category_details: taxonomy.typeCategory,
         is_decomposable: plat.is_decomposable === true || compositions.length > 0,
         is_available: plat.is_available !== false,
         availability_mode: plat.availability_mode || 'everyday',
@@ -267,7 +290,7 @@ exports.getTableMenu = async (req, res) => {
             });
         }
 
-        const snapshot = await db.collection(PLAT_COLLECTION).orderBy('createdAt', 'desc').get();
+        const snapshot = await db.collection(MENU_ITEM_COLLECTION).orderBy('createdAt', 'desc').get();
         const currentDay = getCurrentWeekDay();
         const plats = await Promise.all(
             snapshot.docs

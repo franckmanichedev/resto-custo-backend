@@ -45,6 +45,13 @@ router.put(
     platController.updatePlat
 );
 
+router.patch(
+    '/:id/toggle',
+    verifyFirebaseToken,
+    requireRole(['admin']),
+    platController.togglePlatAvailability
+);
+
 router.delete(
     '/:id',
     verifyFirebaseToken,

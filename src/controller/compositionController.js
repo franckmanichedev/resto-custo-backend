@@ -197,7 +197,7 @@ exports.deleteComposition = async (req, res) => {
         }
 
         const linksSnap = await db
-            .collection('plat_compositions')
+            .collection('menu_item_compositions')
             .where('composition_id', '==', req.params.id)
             .limit(1)
             .get();

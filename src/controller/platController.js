@@ -2,10 +2,12 @@ const crypto = require('crypto');
 const { db, storageBucket } = require('../config/firebase');
 const logger = require('../utils/logger');
 
-const PLAT_COLLECTION = 'plats';
+const MENU_ITEM_COLLECTION = 'menu_items';
 const COMPOSITION_COLLECTION = 'compositions';
-const PLAT_COMPOSITION_COLLECTION = 'plat_compositions';
-const DEFAULT_CATEGORY = 'plat';
+const MENU_ITEM_COMPOSITION_COLLECTION = 'menu_item_compositions';
+const CATEGORY_COLLECTION = 'categories';
+const TYPE_CATEGORY_COLLECTION = 'type_categories';
+const DEFAULT_KIND = 'plat';
 
 const normalizeCompositionName = (value = '') =>
     value
@@ -13,6 +15,11 @@ const normalizeCompositionName = (value = '') =>
         .replace(/[\u0300-\u036f]/g, '')
         .trim()
         .toLowerCase();
+
+const normalizeKind = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'boisson' ? 'boisson' : 'plat';
+};
 
 const serializeDoc = (doc) => ({
     id: doc.id,
@@ -22,7 +29,7 @@ const serializeDoc = (doc) => ({
 const buildStorageFileUrl = (filePath, token) =>
     `https://firebasestorage.googleapis.com/v0/b/${storageBucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
 
-const uploadPlatImage = async (file, platId) => {
+const uploadPlatImage = async (file, menuItemId) => {
     if (!file) {
         return '';
     }
@@ -37,7 +44,7 @@ const uploadPlatImage = async (file, platId) => {
         .replace(/[^a-zA-Z0-9.\-_]/g, '-')
         .replace(/-+/g, '-');
     const token = crypto.randomUUID();
-    const filePath = `plats/${platId}/${Date.now()}-${safeName}`;
+    const filePath = `menu-items/${menuItemId}/${Date.now()}-${safeName}`;
     const storageFile = storageBucket.file(filePath);
 
     await storageFile.save(file.buffer, {
@@ -121,7 +128,7 @@ const ensureCompositionExists = async (selection) => {
     return newComposition;
 };
 
-const syncPlatCompositions = async (platId, compositionSelections = []) => {
+const syncMenuItemCompositions = async (menuItemId, compositionSelections = []) => {
     const resolvedCompositions = [];
     const seenIds = new Set();
 
@@ -134,8 +141,8 @@ const syncPlatCompositions = async (platId, compositionSelections = []) => {
     }
 
     const linksSnap = await db
-        .collection(PLAT_COMPOSITION_COLLECTION)
-        .where('plat_id', '==', platId)
+        .collection(MENU_ITEM_COMPOSITION_COLLECTION)
+        .where('menu_item_id', '==', menuItemId)
         .get();
 
     const batch = db.batch();
@@ -144,10 +151,10 @@ const syncPlatCompositions = async (platId, compositionSelections = []) => {
 
     const now = new Date().toISOString();
     resolvedCompositions.forEach((composition, index) => {
-        const linkRef = db.collection(PLAT_COMPOSITION_COLLECTION).doc();
+        const linkRef = db.collection(MENU_ITEM_COMPOSITION_COLLECTION).doc();
         batch.set(linkRef, {
             id: linkRef.id,
-            plat_id: platId,
+            menu_item_id: menuItemId,
             composition_id: composition.id,
             sort_order: index,
             createdAt: now,
@@ -160,10 +167,10 @@ const syncPlatCompositions = async (platId, compositionSelections = []) => {
     return resolvedCompositions;
 };
 
-const getPlatCompositions = async (platId) => {
+const getMenuItemCompositions = async (menuItemId) => {
     const linksSnap = await db
-        .collection(PLAT_COMPOSITION_COLLECTION)
-        .where('plat_id', '==', platId)
+        .collection(MENU_ITEM_COMPOSITION_COLLECTION)
+        .where('menu_item_id', '==', menuItemId)
         .get();
 
     if (linksSnap.empty) {
@@ -189,13 +196,35 @@ const getPlatCompositions = async (platId) => {
         .filter(Boolean);
 };
 
-const buildPlatResponse = async (platDoc) => {
-    const data = serializeDoc(platDoc);
-    const compositions = await getPlatCompositions(platDoc.id);
+const getCategoryDetails = async (data) => {
+    const [categoryDoc, typeCategoryDoc] = await Promise.all([
+        data.categorie_id ? db.collection(CATEGORY_COLLECTION).doc(data.categorie_id).get() : null,
+        data.type_categorie_id ? db.collection(TYPE_CATEGORY_COLLECTION).doc(data.type_categorie_id).get() : null
+    ]);
+
+    return {
+        category: categoryDoc?.exists ? serializeDoc(categoryDoc) : null,
+        typeCategory: typeCategoryDoc?.exists ? serializeDoc(typeCategoryDoc) : null
+    };
+};
+
+const buildMenuItemResponse = async (menuItemDoc) => {
+    const data = serializeDoc(menuItemDoc);
+    const compositions = await getMenuItemCompositions(menuItemDoc.id);
+    const taxonomy = await getCategoryDetails(data);
+    const kind = normalizeKind(data.kind || data.category || data.legacy_category);
+    const categoryName = taxonomy.category?.name || data.categorie_name || data.category || data.legacy_category || kind;
 
     return {
         ...data,
-        category: data.category || DEFAULT_CATEGORY,
+        kind,
+        category: data.category || data.legacy_category || kind,
+        categorie_id: data.categorie_id || null,
+        categorie_name: categoryName,
+        type_categorie_id: data.type_categorie_id || null,
+        type_categorie_name: taxonomy.typeCategory?.name || data.type_categorie_name || null,
+        category_details: taxonomy.category,
+        type_category_details: taxonomy.typeCategory,
         is_available: data.is_available !== false,
         availability_mode: data.availability_mode || 'everyday',
         available_days: Array.isArray(data.available_days) ? data.available_days : [],
@@ -208,20 +237,27 @@ const buildPlatResponse = async (platDoc) => {
 exports.createPlat = async (req, res) => {
     try {
         const now = new Date().toISOString();
-        const platRef = db.collection(PLAT_COLLECTION).doc();
+        const menuItemRef = db.collection(MENU_ITEM_COLLECTION).doc();
         const compositionSelections = req.body.compositionSelections || [];
         const imageUrl = req.file
-            ? await uploadPlatImage(req.file, platRef.id)
+            ? await uploadPlatImage(req.file, menuItemRef.id)
             : (req.body.image_url || '');
+        const kind = normalizeKind(req.body.kind || req.body.category || req.body.legacy_category);
 
-        const plat = {
-            id: platRef.id,
+        const menuItem = {
+            id: menuItemRef.id,
             name: req.body.name,
             description: req.body.description || '',
             price: req.body.price,
             prep_time: req.body.prep_time || 0,
             image_url: imageUrl,
-            category: req.body.category || DEFAULT_CATEGORY,
+            kind,
+            category: req.body.category || kind,
+            legacy_category: req.body.category || null,
+            categorie_id: req.body.categorie_id || null,
+            categorie_name: req.body.categorie_name || null,
+            type_categorie_id: req.body.type_categorie_id || null,
+            type_categorie_name: req.body.type_categorie_name || null,
             is_promo: req.body.is_promo || false,
             is_available: req.body.is_available !== false,
             availability_mode: req.body.availability_mode || 'everyday',
@@ -233,15 +269,15 @@ exports.createPlat = async (req, res) => {
             updatedAt: now
         };
 
-        await platRef.set(plat);
-        const compositions = await syncPlatCompositions(plat.id, compositionSelections);
+        await menuItemRef.set(menuItem);
+        const compositions = await syncMenuItemCompositions(menuItem.id, compositionSelections);
 
         return res.status(201).json({
             success: true,
             message: 'Plat cree avec succes',
             data: {
-                ...plat,
-                is_decomposable: compositions.length > 0 || plat.is_decomposable,
+                ...menuItem,
+                is_decomposable: compositions.length > 0 || menuItem.is_decomposable,
                 compositions
             }
         });
@@ -259,14 +295,17 @@ exports.listPlats = async (req, res) => {
     try {
         const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
         const categoryFilter = typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+        const kindFilter = typeof req.query.kind === 'string' ? req.query.kind.trim().toLowerCase() : '';
+        const categorieIdFilter = typeof req.query.categorie_id === 'string' ? req.query.categorie_id.trim() : '';
+        const typeCategorieIdFilter = typeof req.query.type_categorie_id === 'string' ? req.query.type_categorie_id.trim() : '';
         const sortBy = typeof req.query.sort_by === 'string' ? req.query.sort_by.trim().toLowerCase() : 'created_at';
         const sortOrder = req.query.sort_order === 'asc' ? 'asc' : 'desc';
         const onlyDecomposable = req.query.is_decomposable === 'true';
         const availableFilter = req.query.is_available;
         const availableToday = req.query.available_today === 'true';
 
-        const snapshot = await db.collection(PLAT_COLLECTION).orderBy('createdAt', 'desc').get();
-        let plats = await Promise.all(snapshot.docs.map((doc) => buildPlatResponse(doc)));
+        const snapshot = await db.collection(MENU_ITEM_COLLECTION).orderBy('createdAt', 'desc').get();
+        let plats = await Promise.all(snapshot.docs.map((doc) => buildMenuItemResponse(doc)));
 
         if (search) {
             plats = plats.filter((plat) => {
@@ -280,7 +319,23 @@ exports.listPlats = async (req, res) => {
         }
 
         if (categoryFilter) {
-            plats = plats.filter((plat) => (plat.category || DEFAULT_CATEGORY) === categoryFilter);
+            plats = plats.filter((plat) =>
+                (plat.category || DEFAULT_KIND) === categoryFilter
+                || (plat.kind || DEFAULT_KIND) === categoryFilter
+                || (plat.categorie_name || '').trim().toLowerCase() === categoryFilter
+            );
+        }
+
+        if (kindFilter) {
+            plats = plats.filter((plat) => (plat.kind || DEFAULT_KIND) === kindFilter);
+        }
+
+        if (categorieIdFilter) {
+            plats = plats.filter((plat) => plat.categorie_id === categorieIdFilter);
+        }
+
+        if (typeCategorieIdFilter) {
+            plats = plats.filter((plat) => plat.type_categorie_id === typeCategorieIdFilter);
         }
 
         if (onlyDecomposable) {
@@ -313,7 +368,7 @@ exports.listPlats = async (req, res) => {
             } else if (sortBy === 'price') {
                 comparison = compareValues(Number(a.price || 0), Number(b.price || 0));
             } else if (sortBy === 'category') {
-                comparison = compareValues(a.category || DEFAULT_CATEGORY, b.category || DEFAULT_CATEGORY)
+                comparison = compareValues(a.categorie_name || a.category || DEFAULT_KIND, b.categorie_name || b.category || DEFAULT_KIND)
                     || compareValues(a.name, b.name);
             } else {
                 comparison = compareValues(
@@ -342,7 +397,7 @@ exports.listPlats = async (req, res) => {
 
 exports.getPlatById = async (req, res) => {
     try {
-        const platDoc = await db.collection(PLAT_COLLECTION).doc(req.params.id).get();
+        const platDoc = await db.collection(MENU_ITEM_COLLECTION).doc(req.params.id).get();
 
         if (!platDoc.exists) {
             return res.status(404).json({
@@ -353,7 +408,7 @@ exports.getPlatById = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            data: await buildPlatResponse(platDoc)
+            data: await buildMenuItemResponse(platDoc)
         });
     } catch (error) {
         logger.error('getPlatById error', { error: error.message, id: req.params.id });
@@ -367,7 +422,7 @@ exports.getPlatById = async (req, res) => {
 
 exports.updatePlat = async (req, res) => {
     try {
-        const platRef = db.collection(PLAT_COLLECTION).doc(req.params.id);
+        const platRef = db.collection(MENU_ITEM_COLLECTION).doc(req.params.id);
         const platDoc = await platRef.get();
 
         if (!platDoc.exists) {
@@ -382,6 +437,13 @@ exports.updatePlat = async (req, res) => {
             updatedAt: new Date().toISOString()
         };
 
+        if (updates.kind || updates.category || updates.legacy_category) {
+            updates.kind = normalizeKind(updates.kind || updates.category || updates.legacy_category);
+            if (updates.category) {
+                updates.legacy_category = updates.category;
+            }
+        }
+
         if (req.file) {
             updates.image_url = await uploadPlatImage(req.file, req.params.id);
         }
@@ -389,7 +451,7 @@ exports.updatePlat = async (req, res) => {
         delete updates.compositionSelections;
 
         if (req.body.compositionSelections) {
-            const compositions = await syncPlatCompositions(req.params.id, req.body.compositionSelections);
+            const compositions = await syncMenuItemCompositions(req.params.id, req.body.compositionSelections);
             updates.is_decomposable = compositions.length > 0 || updates.is_decomposable === true;
         }
 
@@ -399,7 +461,7 @@ exports.updatePlat = async (req, res) => {
         return res.status(200).json({
             success: true,
             message: 'Plat mis a jour avec succes',
-            data: await buildPlatResponse(updatedPlatDoc)
+            data: await buildMenuItemResponse(updatedPlatDoc)
         });
     } catch (error) {
         logger.error('updatePlat error', { error: error.message, id: req.params.id });
@@ -413,7 +475,7 @@ exports.updatePlat = async (req, res) => {
 
 exports.deletePlat = async (req, res) => {
     try {
-        const platRef = db.collection(PLAT_COLLECTION).doc(req.params.id);
+        const platRef = db.collection(MENU_ITEM_COLLECTION).doc(req.params.id);
         const platDoc = await platRef.get();
 
         if (!platDoc.exists) {
@@ -424,8 +486,8 @@ exports.deletePlat = async (req, res) => {
         }
 
         const linksSnap = await db
-            .collection(PLAT_COMPOSITION_COLLECTION)
-            .where('plat_id', '==', req.params.id)
+            .collection(MENU_ITEM_COMPOSITION_COLLECTION)
+            .where('menu_item_id', '==', req.params.id)
             .get();
 
         const batch = db.batch();
@@ -442,6 +504,40 @@ exports.deletePlat = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Erreur lors de la suppression du plat',
+            error: error.message
+        });
+    }
+};
+
+exports.togglePlatAvailability = async (req, res) => {
+    try {
+        const menuItemRef = db.collection(MENU_ITEM_COLLECTION).doc(req.params.id);
+        const menuItemDoc = await menuItemRef.get();
+
+        if (!menuItemDoc.exists) {
+            return res.status(404).json({
+                success: false,
+                message: 'Plat introuvable'
+            });
+        }
+
+        const current = serializeDoc(menuItemDoc);
+        await menuItemRef.update({
+            is_available: current.is_available === false,
+            updatedAt: new Date().toISOString()
+        });
+
+        const updatedDoc = await menuItemRef.get();
+        return res.status(200).json({
+            success: true,
+            message: 'Disponibilite mise a jour avec succes',
+            data: await buildMenuItemResponse(updatedDoc)
+        });
+    } catch (error) {
+        logger.error('togglePlatAvailability error', { error: error.message, id: req.params.id });
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la mise a jour de la disponibilite',
             error: error.message
         });
     }

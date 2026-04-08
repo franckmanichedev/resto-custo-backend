@@ -4,8 +4,8 @@ const logger = require('../utils/logger');
 
 const TABLE_COLLECTION = 'tables';
 const TABLE_SESSION_COLLECTION = 'table_sessions';
-const PLAT_COLLECTION = 'plats';
-const PLAT_COMPOSITION_COLLECTION = 'plat_compositions';
+const MENU_ITEM_COLLECTION = 'menu_items';
+const MENU_ITEM_COMPOSITION_COLLECTION = 'menu_item_compositions';
 const COMPOSITION_COLLECTION = 'compositions';
 const CUSTOMER_COLLECTION = 'customers';
 const ORDER_COLLECTION = 'commandes';
@@ -14,6 +14,8 @@ const ORDER_ITEM_COMPOSITION_COLLECTION = 'commande_item_compositions';
 const CART_COLLECTION = 'paniers';
 const CART_ITEM_COLLECTION = 'panier_items';
 const CART_ITEM_COMPOSITION_COLLECTION = 'panier_item_compositions';
+const CATEGORY_COLLECTION = 'categories';
+const TYPE_CATEGORY_COLLECTION = 'type_categories';
 const ACTIVE_ORDER_STATUSES = ['pending', 'preparing'];
 
 const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -154,10 +156,10 @@ const normalizeCartLineItems = (payload) => {
     }));
 };
 
-const getPlatCompositions = async (platId) => {
+const getMenuItemCompositions = async (menuItemId) => {
     const linksSnap = await db
-        .collection(PLAT_COMPOSITION_COLLECTION)
-        .where('plat_id', '==', platId)
+        .collection(MENU_ITEM_COMPOSITION_COLLECTION)
+        .where('menu_item_id', '==', menuItemId)
         .get();
 
     if (linksSnap.empty) {
@@ -182,12 +184,33 @@ const getPlatCompositions = async (platId) => {
     return compositionIds.map((compositionId) => compositionMap.get(compositionId)).filter(Boolean);
 };
 
+const getCategoryDetails = async (data) => {
+    const [categoryDoc, typeCategoryDoc] = await Promise.all([
+        data.categorie_id ? db.collection(CATEGORY_COLLECTION).doc(data.categorie_id).get() : null,
+        data.type_categorie_id ? db.collection(TYPE_CATEGORY_COLLECTION).doc(data.type_categorie_id).get() : null
+    ]);
+
+    return {
+        category: categoryDoc?.exists ? serializeDoc(categoryDoc) : null,
+        typeCategory: typeCategoryDoc?.exists ? serializeDoc(typeCategoryDoc) : null
+    };
+};
+
 const buildPlatResponse = async (platDoc, currentDay, requestedDay = currentDay) => {
     const data = serializeDoc(platDoc);
-    const compositions = await getPlatCompositions(platDoc.id);
+    const compositions = await getMenuItemCompositions(platDoc.id);
+    const taxonomy = await getCategoryDetails(data);
+    const kind = String(data.kind || data.category || data.legacy_category || 'plat').trim().toLowerCase() === 'boisson'
+        ? 'boisson'
+        : 'plat';
 
     return {
         ...data,
+        kind,
+        categorie_name: taxonomy.category?.name || data.categorie_name || data.category || data.legacy_category || kind,
+        type_categorie_name: taxonomy.typeCategory?.name || data.type_categorie_name || null,
+        category_details: taxonomy.category,
+        type_category_details: taxonomy.typeCategory,
         is_available: data.is_available !== false,
         availability_mode: data.availability_mode || 'everyday',
         available_days: Array.isArray(data.available_days) ? data.available_days : [],
@@ -403,11 +426,9 @@ const getMenuPayloadForSession = async (session, requestedDay) => {
         throw error;
     }
 
-    const snapshot = await db.collection(PLAT_COLLECTION).orderBy('createdAt', 'desc').get();
+    const snapshot = await db.collection(MENU_ITEM_COLLECTION).orderBy('createdAt', 'desc').get();
     const rawPlats = snapshot.docs.map((doc) => serializeDoc(doc)).filter((plat) => plat.is_available !== false);
     const consultableDays = getConsultableDaysFromPlats(rawPlats);
-    const cart = await getOrCreateActiveCartForSession(session);
-    const cartSummary = await buildCartSummary(cart);
     const orders = await listSessionOrdersSummary(session.id);
 
     const plats = await Promise.all(
@@ -424,7 +445,7 @@ const getMenuPayloadForSession = async (session, requestedDay) => {
         can_order: day === currentDay,
         consultable_days: consultableDays,
         plats,
-        cart: cartSummary,
+        cart: null,
         orders
     };
 };
@@ -540,6 +561,11 @@ const getOrderSummary = async (orderId) => {
         return {
             ...item,
             total_price: (item.plat_price || 0) * (item.quantity || 0),
+            kind: item.kind || null,
+            categorie_id: item.categorie_id || null,
+            categorie_name: item.categorie_name || null,
+            type_categorie_id: item.type_categorie_id || null,
+            type_categorie_name: item.type_categorie_name || null,
             ...timing,
             compositions: (actionsByItemId.get(item.id) || []).map((action) => ({
                 ...action,
@@ -618,6 +644,11 @@ const createOrderFromNormalizedItems = async ({ session, customer, note, normali
             quantity: item.quantity,
             plat_name: item.plat.name,
             plat_price: item.plat.price,
+            kind: item.plat.kind || item.plat.category || 'plat',
+            categorie_id: item.plat.categorie_id || null,
+            categorie_name: item.plat.categorie_name || null,
+            type_categorie_id: item.plat.type_categorie_id || null,
+            type_categorie_name: item.plat.type_categorie_name || null,
             prep_time: item.plat.prep_time,
             estimated_ready_at: null,
             preparation_started_at: null,
@@ -719,7 +750,7 @@ exports.getPlatDetail = async (req, res) => {
         const session = await getValidatedSession(req.query.session_token);
         const currentDay = getCurrentWeekDay();
         const requestedDay = validateRequestedDay(req.query.day || currentDay);
-        const platDoc = await db.collection(PLAT_COLLECTION).doc(req.params.id).get();
+        const platDoc = await db.collection(MENU_ITEM_COLLECTION).doc(req.params.id).get();
 
         if (!platDoc.exists) {
             return res.status(404).json({
@@ -788,7 +819,7 @@ exports.addCartItem = async (req, res) => {
             });
         }
 
-        const platDoc = await db.collection(PLAT_COLLECTION).doc(req.body.plat_id.trim()).get();
+        const platDoc = await db.collection(MENU_ITEM_COLLECTION).doc(req.body.plat_id.trim()).get();
         if (!platDoc.exists) {
             return res.status(404).json({
                 success: false,
@@ -997,7 +1028,7 @@ exports.createOrder = async (req, res) => {
                 });
             }
 
-            const platDoc = await db.collection(PLAT_COLLECTION).doc(item.plat_id.trim()).get();
+            const platDoc = await db.collection(MENU_ITEM_COLLECTION).doc(item.plat_id.trim()).get();
             if (!platDoc.exists) {
                 return res.status(404).json({
                     success: false,
@@ -1013,7 +1044,7 @@ exports.createOrder = async (req, res) => {
                 });
             }
 
-            const platCompositions = await getPlatCompositions(plat.id);
+            const platCompositions = await getMenuItemCompositions(plat.id);
             const compositionIds = new Set(platCompositions.map((composition) => composition.id));
             const compositionActions = Array.isArray(item.composition_actions) ? item.composition_actions : [];
 
@@ -1065,7 +1096,8 @@ exports.createOrder = async (req, res) => {
             message: 'Commande envoyee avec succes',
             data: {
                 session: buildSessionPayload(session),
-                order: summary
+                order: summary,
+                orders: await listSessionOrdersSummary(session.id)
             }
         });
     } catch (error) {
@@ -1100,7 +1132,7 @@ exports.checkoutCart = async (req, res) => {
         const normalizedItems = [];
 
         for (const item of cartSummary.items) {
-            const platDoc = await db.collection(PLAT_COLLECTION).doc(item.plat_id).get();
+            const platDoc = await db.collection(MENU_ITEM_COLLECTION).doc(item.plat_id).get();
             if (!platDoc.exists) {
                 return res.status(404).json({
                     success: false,

@@ -1,6 +1,7 @@
 const MAX_NOTE_LENGTH = 500;
 const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const MENU_ITEM_CATEGORIES = ['plat', 'boisson', 'entree'];
+const MENU_ITEM_KINDS = ['plat', 'boisson'];
 
 const isPlainObject = (value) =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -123,6 +124,109 @@ const validateCompositionInput = (payload, { isUpdate = false } = {}) => {
         validateArrayOfStrings(payload.aliases, 'aliases', errors);
         if (Array.isArray(payload.aliases)) {
             data.aliases = payload.aliases.map((item) => item.trim()).filter(Boolean);
+        }
+    }
+
+    if (payload.is_active !== undefined) {
+        validateBoolean(payload.is_active, 'is_active', errors);
+        if (typeof payload.is_active === 'boolean') {
+            data.is_active = payload.is_active;
+        }
+    }
+
+    if (isUpdate && Object.keys(data).length === 0) {
+        addError(errors, 'body', 'Aucun champ valide a mettre a jour');
+    }
+
+    return { value: data, errors };
+};
+
+const validateCategoryInput = (payload, { isUpdate = false } = {}) => {
+    const errors = [];
+    const data = {};
+
+    if (!isPlainObject(payload)) {
+        return {
+            value: null,
+            errors: [{ field: 'body', message: 'Le corps de la requete doit etre un objet JSON' }]
+        };
+    }
+
+    if (!isUpdate || payload.name !== undefined) {
+        if (!isNonEmptyString(payload.name)) {
+            addError(errors, 'name', 'Le nom de la categorie est requis');
+        } else {
+            data.name = payload.name.trim();
+        }
+    }
+
+    if (!isUpdate || payload.kind !== undefined) {
+        if (!isNonEmptyString(payload.kind)) {
+            addError(errors, 'kind', 'kind est requis');
+        } else {
+            const normalizedKind = payload.kind.trim().toLowerCase();
+            if (!MENU_ITEM_KINDS.includes(normalizedKind)) {
+                addError(errors, 'kind', `kind doit etre une des valeurs suivantes: ${MENU_ITEM_KINDS.join(', ')}`);
+            } else {
+                data.kind = normalizedKind;
+            }
+        }
+    }
+
+    if (payload.description !== undefined) {
+        if (payload.description !== null && typeof payload.description !== 'string') {
+            addError(errors, 'description', 'La description doit etre une chaine');
+        } else {
+            data.description = payload.description ? payload.description.trim() : '';
+        }
+    }
+
+    if (payload.is_active !== undefined) {
+        validateBoolean(payload.is_active, 'is_active', errors);
+        if (typeof payload.is_active === 'boolean') {
+            data.is_active = payload.is_active;
+        }
+    }
+
+    if (isUpdate && Object.keys(data).length === 0) {
+        addError(errors, 'body', 'Aucun champ valide a mettre a jour');
+    }
+
+    return { value: data, errors };
+};
+
+const validateTypeCategoryInput = (payload, { isUpdate = false } = {}) => {
+    const errors = [];
+    const data = {};
+
+    if (!isPlainObject(payload)) {
+        return {
+            value: null,
+            errors: [{ field: 'body', message: 'Le corps de la requete doit etre un objet JSON' }]
+        };
+    }
+
+    if (!isUpdate || payload.categorie_id !== undefined) {
+        if (!isNonEmptyString(payload.categorie_id)) {
+            addError(errors, 'categorie_id', 'categorie_id est requis');
+        } else {
+            data.categorie_id = payload.categorie_id.trim();
+        }
+    }
+
+    if (!isUpdate || payload.name !== undefined) {
+        if (!isNonEmptyString(payload.name)) {
+            addError(errors, 'name', 'Le nom du type de categorie est requis');
+        } else {
+            data.name = payload.name.trim();
+        }
+    }
+
+    if (payload.description !== undefined) {
+        if (payload.description !== null && typeof payload.description !== 'string') {
+            addError(errors, 'description', 'La description doit etre une chaine');
+        } else {
+            data.description = payload.description ? payload.description.trim() : '';
         }
     }
 
@@ -299,6 +403,24 @@ const validatePlatInput = (payload, { isUpdate = false } = {}) => {
         data.image_url = '';
     }
 
+    const resolveKind = (rawValue) => {
+        const normalized = String(rawValue || '').trim().toLowerCase();
+        return normalized === 'boisson' ? 'boisson' : 'plat';
+    };
+
+    if (payload.kind !== undefined) {
+        if (!isNonEmptyString(payload.kind)) {
+            addError(errors, 'kind', 'kind est requis');
+        } else {
+            const normalizedKind = payload.kind.trim().toLowerCase();
+            if (!MENU_ITEM_KINDS.includes(normalizedKind)) {
+                addError(errors, 'kind', `kind doit etre une des valeurs suivantes: ${MENU_ITEM_KINDS.join(', ')}`);
+            } else {
+                data.kind = normalizedKind;
+            }
+        }
+    }
+
     if (payload.category !== undefined) {
         if (!isNonEmptyString(payload.category)) {
             addError(errors, 'category', 'category est requis');
@@ -308,10 +430,50 @@ const validatePlatInput = (payload, { isUpdate = false } = {}) => {
                 addError(errors, 'category', `category doit etre une des valeurs suivantes: ${MENU_ITEM_CATEGORIES.join(', ')}`);
             } else {
                 data.category = normalizedCategory;
+                if (!data.kind) {
+                    data.kind = resolveKind(normalizedCategory);
+                }
             }
         }
-    } else if (!isUpdate) {
+    } else if (!isUpdate && !data.kind) {
         data.category = 'plat';
+        data.kind = 'plat';
+    }
+
+    if (!isUpdate && !data.kind) {
+        data.kind = 'plat';
+    }
+
+    if (payload.categorie_id !== undefined) {
+        if (payload.categorie_id !== null && !isNonEmptyString(payload.categorie_id)) {
+            addError(errors, 'categorie_id', 'categorie_id doit etre une chaine non vide ou null');
+        } else {
+            data.categorie_id = payload.categorie_id ? payload.categorie_id.trim() : null;
+        }
+    }
+
+    if (payload.categorie_name !== undefined) {
+        if (payload.categorie_name !== null && typeof payload.categorie_name !== 'string') {
+            addError(errors, 'categorie_name', 'categorie_name doit etre une chaine');
+        } else {
+            data.categorie_name = payload.categorie_name ? payload.categorie_name.trim() : null;
+        }
+    }
+
+    if (payload.type_categorie_id !== undefined) {
+        if (payload.type_categorie_id !== null && !isNonEmptyString(payload.type_categorie_id)) {
+            addError(errors, 'type_categorie_id', 'type_categorie_id doit etre une chaine non vide ou null');
+        } else {
+            data.type_categorie_id = payload.type_categorie_id ? payload.type_categorie_id.trim() : null;
+        }
+    }
+
+    if (payload.type_categorie_name !== undefined) {
+        if (payload.type_categorie_name !== null && typeof payload.type_categorie_name !== 'string') {
+            addError(errors, 'type_categorie_name', 'type_categorie_name doit etre une chaine');
+        } else {
+            data.type_categorie_name = payload.type_categorie_name ? payload.type_categorie_name.trim() : null;
+        }
     }
 
     if (payload.is_promo !== undefined) {
@@ -566,6 +728,10 @@ module.exports = {
     updateWorkerSkillSchema: passThroughSchema,
     createCompositionSchema: createSchemaValidator((payload) => validateCompositionInput(payload)),
     updateCompositionSchema: createSchemaValidator((payload) => validateCompositionInput(payload, { isUpdate: true })),
+    createCategorySchema: createSchemaValidator((payload) => validateCategoryInput(payload)),
+    updateCategorySchema: createSchemaValidator((payload) => validateCategoryInput(payload, { isUpdate: true })),
+    createTypeCategorySchema: createSchemaValidator((payload) => validateTypeCategoryInput(payload)),
+    updateTypeCategorySchema: createSchemaValidator((payload) => validateTypeCategoryInput(payload, { isUpdate: true })),
     createPlatSchema: createSchemaValidator((payload) => validatePlatInput(payload)),
     updatePlatSchema: createSchemaValidator((payload) => validatePlatInput(payload, { isUpdate: true })),
     createTableSchema: createSchemaValidator((payload) => validateTableInput(payload)),
