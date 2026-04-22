@@ -1,0 +1,39 @@
+const admin = require('firebase-admin');
+
+const serviceAccount = {
+    type: 'service_account',
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: process.env.FIREBASE_AUTH_URI,
+    token_uri: process.env.FIREBASE_TOKEN_URI,
+    auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
+    client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL,
+    universe_domain: process.env.FIREBASE_UNIVERSE_DOMAIN
+};
+
+const isFirebaseConfigured = () =>
+    Boolean(serviceAccount.project_id && serviceAccount.private_key && serviceAccount.client_email);
+
+let db = null;
+let storageBucket = null;
+
+if (isFirebaseConfigured()) {
+    if (!admin.apps.length) {
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET
+        });
+    }
+
+    db = admin.firestore();
+    storageBucket = admin.storage().bucket();
+} else if (process.env.NODE_ENV !== 'test') {
+    throw new Error(
+        'Firebase credentials are not configured. Please set FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, and FIREBASE_CLIENT_EMAIL'
+    );
+}
+
+module.exports = { admin, db, storageBucket, isFirebaseConfigured };
