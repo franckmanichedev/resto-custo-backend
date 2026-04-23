@@ -40,6 +40,7 @@ const app = express();
 const frontendRoot = path.resolve(__dirname, '../../resto-qrcode-frontend');
 const frontendPublicRoot = path.join(frontendRoot, 'public');
 const frontendSrcRoot = path.join(frontendRoot, 'src');
+const API_PREFIXES = ['/api', '/api/v1'];
 
 // Serve the public pages at `/client/...` and keep source modules available at `/src/...`.
 app.use('/src', express.static(frontendSrcRoot));
@@ -75,17 +76,19 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use('/api/auth', authModule.router);
-app.use('/api/users', userModule.router);
-app.use('/api/plats', platModule.router);
-app.use('/api/compositions', compositionModule.router);
-app.use('/api/categories', categoryModule.router);
-app.use('/api/tables', tableModule.router);
-app.use('/api/front-office', sessionModule.router);
-app.use('/api/orders', orderModule.router);
+API_PREFIXES.forEach((prefix) => {
+    app.use(`${prefix}/auth`, authModule.router);
+    app.use(`${prefix}/users`, userModule.router);
+    app.use(`${prefix}/plats`, platModule.router);
+    app.use(`${prefix}/compositions`, compositionModule.router);
+    app.use(`${prefix}/categories`, categoryModule.router);
+    app.use(`${prefix}/tables`, tableModule.router);
+    app.use(`${prefix}/front-office`, sessionModule.router);
+    app.use(`${prefix}/orders`, orderModule.router);
 
-app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'OK', message: 'Serveur en cours d\'execution' });
+    app.get(`${prefix}/health`, (req, res) => {
+        res.status(200).json({ status: 'OK', message: 'Serveur en cours d\'execution' });
+    });
 });
 
 // Error handler middleware (doit être après toutes les routes)
