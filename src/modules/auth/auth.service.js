@@ -3,6 +3,12 @@ const AppError = require('../../shared/errors/AppError');
 const UserEntity = require('../../core/entities/User');
 const logger = require('../../shared/utils/logger');
 const sanitize = require('../../shared/utils/sanitizer');
+const { ROLES, normalizeRole, isPlatformRole } = require('../../shared/constants/roles');
+
+const normalizeTenantId = (payload = {}) => {
+    const tenantId = payload.tenant_id ?? payload.tenantId ?? payload.restaurant_id ?? payload.restaurantId;
+    return typeof tenantId === 'string' ? tenantId.trim() : tenantId ?? null;
+};
 
 class AuthService {
     constructor({ authRepository, userRepository, firebaseApiKey }) {
@@ -22,12 +28,16 @@ class AuthService {
         }
 
         const timestamp = new Date().toISOString();
+        const normalizedRole = normalizeRole(firebaseUser.role);
         const user = UserEntity.create({
             id: firebaseUser.uid,
             name: firebaseUser.name || firebaseUser.displayName || '',
             email: firebaseUser.email || null,
-            role: 'customer',
-            restaurant_id: firebaseUser.restaurant_id || null,
+            role: normalizedRole && !isPlatformRole(normalizedRole) ? normalizedRole : ROLES.CUSTOMER,
+            tenant_id: normalizeTenantId(firebaseUser),
+            tenantId: normalizeTenantId(firebaseUser),
+            restaurant_id: normalizeTenantId(firebaseUser),
+            restaurantId: normalizeTenantId(firebaseUser),
             createdAt: timestamp,
             updatedAt: timestamp
         });
@@ -42,6 +52,10 @@ class AuthService {
 
         if (payload.password !== payload.passwordConfirm) {
             throw new AppError('Les mots de passe ne correspondent pas', 400);
+        }
+
+        if (!this.firebaseApiKey) {
+            throw new AppError('Erreur de configuration serveur', 500);
         }
 
         this.validatePassword(payload.password);
@@ -64,6 +78,17 @@ class AuthService {
             await this.ensureFirebasePhoneAvailable(normalizedPhoneNumber);
         }
 
+        const normalizedRole = normalizeRole(payload.role);
+        if (payload.role !== undefined && !normalizedRole) {
+            throw new AppError('Role invalide', 400);
+        }
+
+        if (normalizedRole && isPlatformRole(normalizedRole)) {
+            throw new AppError('Les roles plateforme ne peuvent pas etre attribues via l\'inscription', 403);
+        }
+
+        const tenantId = normalizeTenantId(payload);
+
         const userRecord = await this.authRepository.createUser({
             email,
             password: payload.password,
@@ -76,20 +101,26 @@ class AuthService {
             id: userRecord.uid,
             email,
             name: payload.name,
-            role: payload.role || 'customer',
+            role: normalizedRole || ROLES.CUSTOMER,
             phoneNumber: normalizedPhoneNumber,
-            restaurant_id: payload.restaurant_id || null,
+            tenant_id: tenantId,
+            tenantId,
+            restaurant_id: tenantId,
+            restaurantId: tenantId,
             createdAt: timestamp,
             updatedAt: timestamp
         });
 
         await this.userRepository.create(user.id, user);
+        const firebaseSession = await this.verifyPassword(email, payload.password);
 
         return {
             statusCode: 201,
             message: 'Utilisateur cree avec email avec succes',
             data: user,
-            customToken: await this.authRepository.createCustomToken(user.id)
+            idToken: firebaseSession.idToken,
+            refreshToken: firebaseSession.refreshToken,
+            expiresIn: firebaseSession.expiresIn
         };
     }
 
@@ -130,8 +161,10 @@ class AuthService {
                 email: user.email,
                 firstName: user.firstName || '',
                 lastName: user.lastName || '',
-                role: user.role || 'customer',
-                displayName: user.displayName || ''
+                role: normalizeRole(user.role) || ROLES.CUSTOMER,
+                displayName: user.displayName || '',
+                tenant_id: normalizeTenantId(user),
+                restaurant_id: normalizeTenantId(user)
             }
         };
     }
@@ -157,6 +190,8 @@ class AuthService {
             throw new AppError('Ce compte a ete desactive. Contactez l\'administrateur.', 403);
         }
 
+        const tenantId = normalizeTenantId(user);
+
         return {
             success: true,
             message: 'Connexion reussie',
@@ -167,9 +202,12 @@ class AuthService {
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                role: user.role || 'customer',
+                role: normalizeRole(user.role) || ROLES.CUSTOMER,
                 phoneNumber: user.phoneNumber || null,
-                restaurant_id: user.restaurant_id || null,
+                tenant_id: tenantId,
+                tenantId,
+                restaurant_id: tenantId,
+                restaurantId: tenantId,
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt
             }

@@ -4,10 +4,17 @@ const { serializeDoc, toFirestoreData } = require('../../shared/utils/firestore'
 
 class UserRepository {
     constructor(firestore = db) {
-        this.collection = firestore.collection(USERS);
+        this.collection = firestore ? firestore.collection(USERS) : null;
+    }
+
+    ensureCollection() {
+        if (!this.collection) {
+            throw new Error('Firestore is not configured');
+        }
     }
 
     async findById(id) {
+        this.ensureCollection();
         const doc = await this.collection.doc(id).get();
         if (!doc.exists) {
             return null;
@@ -17,6 +24,7 @@ class UserRepository {
     }
 
     async findByEmail(email) {
+        this.ensureCollection();
         const snapshot = await this.collection.where('email', '==', email).limit(1).get();
         if (snapshot.empty) {
             return null;
@@ -26,6 +34,7 @@ class UserRepository {
     }
 
     async findByPhoneNumber(phoneNumber) {
+        this.ensureCollection();
         const snapshot = await this.collection.where('phoneNumber', '==', phoneNumber).limit(1).get();
         if (snapshot.empty) {
             return null;
@@ -35,12 +44,14 @@ class UserRepository {
     }
 
     async create(id, payload) {
+        this.ensureCollection();
         const data = toFirestoreData(payload);
         await this.collection.doc(id).set(data);
         return { id, ...data };
     }
 
     async update(id, payload) {
+        this.ensureCollection();
         await this.collection.doc(id).update(toFirestoreData(payload));
         return this.findById(id);
     }

@@ -1,5 +1,6 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../shared/middlewares/verifyFirebaseToken');
+const requireTenantScope = require('../../shared/middlewares/requireTenantScope');
 const requireRole = require('../../shared/middlewares/requireRole');
 const validateRequest = require('../../shared/middlewares/validateRequest');
 const { createTableSchema, updateTableSchema } = require('./table.schema');
@@ -12,11 +13,12 @@ module.exports = ({ tableController }) => {
     router.get('/menu/:id', tableController.getTableMenu);
     
     // Gestion des tables - Admin uniquement
-    router.get('/', verifyFirebaseToken, requireRole('admin'), tableController.listTables);
-    router.get('/:id', verifyFirebaseToken, requireRole('admin'), tableController.getTableById);
+    router.get('/', verifyFirebaseToken, requireTenantScope(), requireRole('admin'), tableController.listTables);
+    router.get('/:id', verifyFirebaseToken, requireTenantScope(), requireRole('admin'), tableController.getTableById);
     router.post(
         '/',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         validateRequest(createTableSchema),
         tableController.createTable
@@ -24,6 +26,7 @@ module.exports = ({ tableController }) => {
     router.put(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         validateRequest(updateTableSchema),
         tableController.updateTable
@@ -31,6 +34,7 @@ module.exports = ({ tableController }) => {
     router.delete(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         tableController.deleteTable
     );

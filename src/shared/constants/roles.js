@@ -1,20 +1,49 @@
 /**
  * Définition des rôles d'utilisateur pour la SaaS
- * Chaque restaurant peut assigner ces rôles à ses employés
+ *
+ * Architecture cible:
+ * - platform: équipe interne de la SaaS
+ * - tenant: restaurant client et ses employés
+ * - customer: client final du restaurant
+ *
+ * Les rôles restaurant existants sont conservés pour compatibilité.
  */
 
 const ROLES = {
-    // Administrateur / Propriétaire du restaurant
+    // Plateforme SaaS
+    PLATFORM_OWNER: 'platform_owner',
+    PLATFORM_ADMIN: 'platform_admin',
+    PLATFORM_SUPPORT: 'platform_support',
+
+    // Tenant / Restaurant - rôles historiques conservés
     ADMIN: 'admin',
-    
-    // Gestionnaire de Menu - Responsable de la gestion des articles, menus, prix, etc
     MENU_MANAGER: 'menu_manager',
-    
-    // Personnel de Cuisine - Responsable de la préparation et suivi des commandes
     KITCHEN_STAFF: 'kitchen_staff',
-    
-    // Client / Customer - Utilisateur final du restaurant
     CUSTOMER: 'customer'
+};
+
+const ROLE_SCOPES = {
+    [ROLES.PLATFORM_OWNER]: 'platform',
+    [ROLES.PLATFORM_ADMIN]: 'platform',
+    [ROLES.PLATFORM_SUPPORT]: 'platform',
+    [ROLES.ADMIN]: 'tenant',
+    [ROLES.MENU_MANAGER]: 'tenant',
+    [ROLES.KITCHEN_STAFF]: 'tenant',
+    [ROLES.CUSTOMER]: 'customer'
+};
+
+const ROLE_ALIASES = {
+    platform_owner: ROLES.PLATFORM_OWNER,
+    platform_admin: ROLES.PLATFORM_ADMIN,
+    platform_support: ROLES.PLATFORM_SUPPORT,
+    tenant_admin: ROLES.ADMIN,
+    tenant_manager: ROLES.MENU_MANAGER,
+    tenant_staff: ROLES.KITCHEN_STAFF,
+    tenant_customer: ROLES.CUSTOMER,
+    restaurant_admin: ROLES.ADMIN,
+    restaurant_manager: ROLES.MENU_MANAGER,
+    restaurant_staff: ROLES.KITCHEN_STAFF,
+    restaurant_customer: ROLES.CUSTOMER
 };
 
 /**
@@ -22,127 +51,176 @@ const ROLES = {
  * Chaque rôle a des permissions spécifiques
  */
 const PERMISSIONS = {
-    // ADMIN: Accès complet à toutes les fonctionnalités
-    [ROLES.ADMIN]: [
-        // Gestion des articles (plats)
+    // PLATFORM_OWNER: accès complet à la plateforme SaaS et à tous les tenants
+    [ROLES.PLATFORM_OWNER]: [
+        'platform:tenants:create',
+        'platform:tenants:read',
+        'platform:tenants:update',
+        'platform:tenants:delete',
+        'platform:tenants:activate',
+        'platform:tenants:suspend',
+        'platform:tenants:archive',
+        'platform:users:read',
+        'platform:users:update',
+        'platform:subscriptions:read',
+        'platform:subscriptions:update',
+        'platform:analytics:read',
+        'platform:billing:read',
+        'platform:billing:update',
+        'platform:logs:read',
+        'platform:support:impersonate',
+
         'plats:create',
         'plats:read',
         'plats:update',
         'plats:delete',
         'plats:toggle_availability',
-        
-        // Gestion des compositions
         'compositions:create',
         'compositions:read',
         'compositions:update',
         'compositions:delete',
-        
-        // Gestion des catégories
         'categories:create',
         'categories:read',
         'categories:update',
         'categories:delete',
-        
-        // Gestion des types de catégories
         'type_categories:create',
         'type_categories:read',
         'type_categories:update',
         'type_categories:delete',
-        
-        // Gestion des tables
         'tables:create',
         'tables:read',
         'tables:update',
         'tables:delete',
         'tables:generate_qrcode',
-        
-        // Gestion des commandes
+        'orders:create_own',
         'orders:read',
+        'orders:read_own',
         'orders:update_status',
         'orders:cancel',
+        'orders:cancel_own',
         'orders:analytics',
-        
-        // Gestion des utilisateurs/employés
         'users:read',
         'users:update',
         'users:create_employee',
         'users:delete_employee',
         'users:manage_roles',
-        
-        // Gestion du compte restaurant
+        'users:read_profile',
+        'users:update_profile',
         'restaurant:read',
         'restaurant:update',
         'restaurant:view_analytics',
-        'restaurant:view_revenue'
+        'restaurant:view_revenue',
+        'cart:create',
+        'cart:read',
+        'cart:update',
+        'cart:delete'
     ],
-    
-    // MENU_MANAGER: Responsable de la gestion des articles et configurations
-    [ROLES.MENU_MANAGER]: [
-        // Gestion des articles (plats)
+
+    // PLATFORM_ADMIN: supervision et gestion des tenants
+    [ROLES.PLATFORM_ADMIN]: [
+        'platform:tenants:create',
+        'platform:tenants:read',
+        'platform:tenants:update',
+        'platform:tenants:activate',
+        'platform:tenants:suspend',
+        'platform:users:read',
+        'platform:users:update',
+        'platform:subscriptions:read',
+        'platform:analytics:read',
+        'platform:billing:read',
+        'platform:logs:read',
+        'platform:support:impersonate'
+    ],
+
+    // PLATFORM_SUPPORT: support interne, lecture + assistance limitée
+    [ROLES.PLATFORM_SUPPORT]: [
+        'platform:tenants:read',
+        'platform:users:read',
+        'platform:subscriptions:read',
+        'platform:analytics:read',
+        'platform:logs:read',
+        'platform:support:impersonate'
+    ],
+
+    // ADMIN: accès complet à toutes les fonctionnalités du restaurant tenant
+    [ROLES.ADMIN]: [
         'plats:create',
         'plats:read',
         'plats:update',
         'plats:delete',
         'plats:toggle_availability',
-        
-        // Gestion des compositions
         'compositions:create',
         'compositions:read',
         'compositions:update',
         'compositions:delete',
-        
-        // Gestion des catégories
         'categories:create',
         'categories:read',
         'categories:update',
         'categories:delete',
-        
-        // Gestion des types de catégories
         'type_categories:create',
         'type_categories:read',
         'type_categories:update',
         'type_categories:delete',
-        
-        // Gestion basique des tables (lecture seulement)
+        'tables:create',
         'tables:read',
-        
-        // Lecture des commandes (pour voir quels plats sont commandés)
-        'orders:read'
-    ],
-    
-    // KITCHEN_STAFF: Responsable de la préparation des commandes
-    [ROLES.KITCHEN_STAFF]: [
-        // Lecture des articles (pour préparation)
-        'plats:read',
-        
-        // Lecture des compositions
-        'compositions:read',
-        
-        // Lecture des catégories
-        'categories:read',
-        'type_categories:read',
-        
-        // Gestion des commandes (lecture et mise à jour du statut)
+        'tables:update',
+        'tables:delete',
+        'tables:generate_qrcode',
         'orders:read',
         'orders:update_status',
-        
-        // Lecture du profil utilisateur
-        'users:read_profile'
+        'orders:cancel',
+        'orders:analytics',
+        'users:read',
+        'users:update',
+        'users:create_employee',
+        'users:delete_employee',
+        'users:manage_roles',
+        'restaurant:read',
+        'restaurant:update',
+        'restaurant:view_analytics',
+        'restaurant:view_revenue'
     ],
-    
-    // CUSTOMER: Client final du restaurant
-    [ROLES.CUSTOMER]: [
-        // Lecture des articles publics
+
+    // MENU_MANAGER: responsable de la gestion du menu et des catégories
+    [ROLES.MENU_MANAGER]: [
+        'plats:create',
         'plats:read',
-        
-        // Lecture des compositions publiques
+        'plats:update',
+        'plats:delete',
+        'plats:toggle_availability',
+        'compositions:create',
         'compositions:read',
-        
-        // Lecture des catégories publiques
+        'compositions:update',
+        'compositions:delete',
+        'categories:create',
+        'categories:read',
+        'categories:update',
+        'categories:delete',
+        'type_categories:create',
+        'type_categories:read',
+        'type_categories:update',
+        'type_categories:delete',
+        'tables:read',
+        'orders:read'
+    ],
+
+    // KITCHEN_STAFF: responsable de la préparation des commandes
+    [ROLES.KITCHEN_STAFF]: [
+        'plats:read',
+        'compositions:read',
         'categories:read',
         'type_categories:read',
-        
-        // Gestion de son propre panier et commandes
+        'orders:read',
+        'orders:update_status',
+        'users:read_profile'
+    ],
+
+    // CUSTOMER: client final du restaurant
+    [ROLES.CUSTOMER]: [
+        'plats:read',
+        'compositions:read',
+        'categories:read',
+        'type_categories:read',
         'cart:create',
         'cart:read',
         'cart:update',
@@ -150,8 +228,6 @@ const PERMISSIONS = {
         'orders:create_own',
         'orders:read_own',
         'orders:cancel_own',
-        
-        // Profil utilisateur
         'users:read_profile',
         'users:update_profile'
     ]
@@ -162,6 +238,21 @@ const PERMISSIONS = {
  * Utilisée pour vérifier si un utilisateur a les droits d'accès
  */
 const ENDPOINT_PERMISSIONS = {
+    // Plateforme SaaS
+    'GET /api/platform/tenants': 'platform:tenants:read',
+    'POST /api/platform/tenants': 'platform:tenants:create',
+    'GET /api/platform/tenants/:id': 'platform:tenants:read',
+    'PUT /api/platform/tenants/:id': 'platform:tenants:update',
+    'DELETE /api/platform/tenants/:id': 'platform:tenants:delete',
+    'PATCH /api/platform/tenants/:id/activate': 'platform:tenants:activate',
+    'PATCH /api/platform/tenants/:id/suspend': 'platform:tenants:suspend',
+    'GET /api/platform/users': 'platform:users:read',
+    'PUT /api/platform/users/:id': 'platform:users:update',
+    'GET /api/platform/subscriptions': 'platform:subscriptions:read',
+    'GET /api/platform/analytics': 'platform:analytics:read',
+    'GET /api/platform/billing': 'platform:billing:read',
+    'GET /api/platform/logs': 'platform:logs:read',
+
     // Plats
     'POST /api/plats': 'plats:create',
     'GET /api/plats': 'plats:read',
@@ -169,39 +260,79 @@ const ENDPOINT_PERMISSIONS = {
     'PUT /api/plats/:id': 'plats:update',
     'DELETE /api/plats/:id': 'plats:delete',
     'PATCH /api/plats/:id/toggle': 'plats:toggle_availability',
-    
+
     // Compositions
     'POST /api/compositions': 'compositions:create',
     'GET /api/compositions': 'compositions:read',
     'GET /api/compositions/:id': 'compositions:read',
     'PUT /api/compositions/:id': 'compositions:update',
     'DELETE /api/compositions/:id': 'compositions:delete',
-    
+
     // Catégories
     'POST /api/categories': 'categories:create',
     'GET /api/categories': 'categories:read',
     'GET /api/categories/:id': 'categories:read',
     'PUT /api/categories/:id': 'categories:update',
     'DELETE /api/categories/:id': 'categories:delete',
-    
+
     // Type Catégories
     'POST /api/categories/types/all': 'type_categories:create',
     'GET /api/categories/types/all': 'type_categories:read',
     'PUT /api/categories/types/all/:id': 'type_categories:update',
     'DELETE /api/categories/types/all/:id': 'type_categories:delete',
-    
+
     // Tables
     'POST /api/tables': 'tables:create',
     'GET /api/tables': 'tables:read',
     'GET /api/tables/:id': 'tables:read',
     'PUT /api/tables/:id': 'tables:update',
     'DELETE /api/tables/:id': 'tables:delete',
-    
+
     // Commandes
     'GET /api/orders': 'orders:read',
     'GET /api/orders/:id': 'orders:read',
     'PUT /api/orders/:id/status': 'orders:update_status'
 };
+
+/**
+ * Normalise un rôle en appliquant les alias de compatibilité.
+ * @param {string} role - Rôle brut issu de la base ou du token
+ * @returns {string|null}
+ */
+const normalizeRole = (role) => {
+    if (typeof role !== 'string') {
+        return null;
+    }
+
+    const normalized = role.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+
+    if (Object.values(ROLES).includes(normalized)) {
+        return normalized;
+    }
+
+    return ROLE_ALIASES[normalized] || null;
+};
+
+/**
+ * Récupère le scope métier d'un rôle.
+ * @param {string} role - Rôle de l'utilisateur
+ * @returns {'platform'|'tenant'|'customer'|null}
+ */
+const getRoleScope = (role) => {
+    const normalizedRole = normalizeRole(role);
+    if (!normalizedRole) {
+        return null;
+    }
+
+    return ROLE_SCOPES[normalizedRole] || null;
+};
+
+const isPlatformRole = (role) => getRoleScope(role) === 'platform';
+const isTenantRole = (role) => getRoleScope(role) === 'tenant';
+const isCustomerRole = (role) => getRoleScope(role) === 'customer';
 
 /**
  * Vérifie si un rôle a une permission spécifique
@@ -210,7 +341,8 @@ const ENDPOINT_PERMISSIONS = {
  * @returns {boolean}
  */
 const hasPermission = (role, permission) => {
-    const rolePermissions = PERMISSIONS[role] || [];
+    const normalizedRole = normalizeRole(role);
+    const rolePermissions = PERMISSIONS[normalizedRole] || [];
     return rolePermissions.includes(permission);
 };
 
@@ -236,8 +368,15 @@ const hasAnyPermission = (role, permissions) => {
 
 module.exports = {
     ROLES,
+    ROLE_SCOPES,
+    ROLE_ALIASES,
     PERMISSIONS,
     ENDPOINT_PERMISSIONS,
+    normalizeRole,
+    getRoleScope,
+    isPlatformRole,
+    isTenantRole,
+    isCustomerRole,
     hasPermission,
     hasAllPermissions,
     hasAnyPermission

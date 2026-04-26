@@ -1,6 +1,18 @@
-const allowedRoles = ['customer', 'admin'];
+const { ROLES, normalizeRole, isPlatformRole } = require('../../shared/constants/roles');
+
+const allowedRoles = [
+    ROLES.CUSTOMER,
+    ROLES.ADMIN,
+    ROLES.MENU_MANAGER,
+    ROLES.KITCHEN_STAFF
+];
 
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : value);
+
+const normalizeTenantId = (payload = {}) => {
+    const tenantId = payload.tenant_id ?? payload.tenantId ?? payload.restaurant_id ?? payload.restaurantId;
+    return typeof tenantId === 'string' ? tenantId.trim() : tenantId ?? null;
+};
 
 const validateProfileUpdate = (payload = {}) => {
     const errors = [];
@@ -23,19 +35,26 @@ const validateProfileUpdate = (payload = {}) => {
     }
 
     if (payload.role !== undefined) {
-        const role = normalizeString(payload.role)?.toLowerCase();
-        if (!allowedRoles.includes(role)) {
-            errors.push({ field: 'role', message: `Le role doit etre une des valeurs suivantes: ${allowedRoles.join(', ')}` });
+        const role = normalizeRole(normalizeString(payload.role));
+        if (!role || !allowedRoles.includes(role) || isPlatformRole(role)) {
+            errors.push({
+                field: 'role',
+                message: `Le role doit etre une des valeurs suivantes: ${allowedRoles.join(', ')}`
+            });
         } else {
             value.role = role;
         }
     }
 
-    if (payload.restaurant_id !== undefined) {
-        if (payload.restaurant_id !== null && typeof payload.restaurant_id !== 'string') {
-            errors.push({ field: 'restaurant_id', message: 'restaurant_id doit etre une chaine ou null' });
+    if (payload.tenant_id !== undefined || payload.tenantId !== undefined || payload.restaurant_id !== undefined || payload.restaurantId !== undefined) {
+        if (normalizeTenantId(payload) !== null && typeof normalizeTenantId(payload) !== 'string') {
+            errors.push({ field: 'tenant_id', message: 'tenant_id doit etre une chaine ou null' });
         } else {
-            value.restaurant_id = normalizeString(payload.restaurant_id) || null;
+            const tenantId = normalizeTenantId(payload);
+            value.tenant_id = tenantId;
+            value.tenantId = tenantId;
+            value.restaurant_id = tenantId;
+            value.restaurantId = tenantId;
         }
     }
 

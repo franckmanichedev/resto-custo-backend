@@ -4,6 +4,7 @@ const path = require('path');
 const logger = require('./shared/utils/logger');
 const AppError = require('./shared/errors/AppError');
 const createModules = require('./modules');
+const createContextRouters = require('./routes/contextRouters');
 
 const DEFAULT_FRONTEND_URLS = {
     development: 'http://localhost:3000',
@@ -25,6 +26,7 @@ const getAllowedOrigins = () => ([
     'http://192.168.43.95:3000'
 ].filter(Boolean));
 
+const modules = createModules();
 const {
     authModule,
     userModule,
@@ -34,7 +36,12 @@ const {
     platModule,
     tableModule,
     sessionModule
-} = createModules();
+} = modules;
+const {
+    platformRouter,
+    restaurantRouter,
+    clientRouter
+} = createContextRouters(modules);
 
 const app = express();
 const frontendRoot = path.resolve(__dirname, '../../resto-qrcode-frontend');
@@ -77,6 +84,10 @@ app.use((req, res, next) => {
 });
 
 API_PREFIXES.forEach((prefix) => {
+    app.use(`${prefix}/platform`, platformRouter);
+    app.use(`${prefix}/restaurant`, restaurantRouter);
+    app.use(`${prefix}/client`, clientRouter);
+
     app.use(`${prefix}/auth`, authModule.router);
     app.use(`${prefix}/users`, userModule.router);
     app.use(`${prefix}/plats`, platModule.router);

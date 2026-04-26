@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const verifyFirebaseToken = require('../../shared/middlewares/verifyFirebaseToken');
+const requireTenantScope = require('../../shared/middlewares/requireTenantScope');
 const requireRole = require('../../shared/middlewares/requireRole');
 const validateRequest = require('../../shared/middlewares/validateRequest');
 const parseMultipartPayload = require('../../shared/middlewares/parseMultipartPayload');
@@ -29,6 +30,7 @@ module.exports = ({ platController }) => {
     router.post(
         '/',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -40,6 +42,7 @@ module.exports = ({ platController }) => {
     router.put(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -51,6 +54,7 @@ module.exports = ({ platController }) => {
     router.patch(
         '/:id/toggle',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         platController.togglePlatAvailability
     );
@@ -59,6 +63,7 @@ module.exports = ({ platController }) => {
     router.delete(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         platController.deletePlat
     );

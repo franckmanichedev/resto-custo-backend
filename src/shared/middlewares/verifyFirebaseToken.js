@@ -1,22 +1,41 @@
 const { admin } = require('../../infrastructure/firebase/firebaseAdmin');
 const logger = require('../utils/logger');
 const UserRepository = require('../../modules/user/user.repository');
-const { ROLES } = require('../constants/roles');
+const { ROLES, normalizeRole } = require('../constants/roles');
 
-const userRepository = new UserRepository();
+let userRepository = null;
+
+const getUserRepository = () => {
+    if (!userRepository) {
+        userRepository = new UserRepository();
+    }
+
+    return userRepository;
+};
+
+const normalizeTenantId = (source = {}) => {
+    if (!source || typeof source !== 'object') {
+        return null;
+    }
+
+    return source.tenant_id
+        || source.tenantId
+        || source.restaurant_id
+        || source.restaurantId
+        || source?.claims?.tenant_id
+        || source?.claims?.tenantId
+        || source?.claims?.restaurant_id
+        || source?.claims?.restaurantId
+        || null;
+};
 
 /**
  * Mappe un token Firebase décrypté et des données utilisateur vers un objet utilisateur authentifié
  * Utilise les rôles définis dans constants/roles.js
  */
 const mapAuthenticatedUser = (decodedToken, userData = null) => {
-    let roleVal = (userData?.role || '').toString().toLowerCase().trim();
-    
-    // Validation du rôle - utilise les rôles définis ou défaut à 'customer'
-    const validRoles = Object.values(ROLES);
-    if (!roleVal || !validRoles.includes(roleVal)) {
-        roleVal = ROLES.CUSTOMER; // Défaut: customer si pas de rôle valide
-    }
+    const roleVal = normalizeRole(userData?.role) || ROLES.CUSTOMER;
+    const tenantId = normalizeTenantId(userData) || normalizeTenantId(decodedToken);
 
     return {
         uid: decodedToken.uid,
@@ -28,7 +47,10 @@ const mapAuthenticatedUser = (decodedToken, userData = null) => {
         phoneNumber: userData?.phoneNumber || null,
         clientType: userData?.clientType || userData?.accountType || 'personal',
         isActive: userData?.isActive,
-        restaurant_id: userData?.restaurant_id || null
+        tenant_id: tenantId,
+        tenantId,
+        restaurant_id: tenantId,
+        restaurantId: tenantId
     };
 };
 
@@ -52,7 +74,7 @@ const verifyFirebaseToken = async (req, res, next) => {
         }
 
         const decodedToken = await admin.auth().verifyIdToken(idToken);
-        const user = await userRepository.findById(decodedToken.uid);
+        const user = await getUserRepository().findById(decodedToken.uid);
 
         if (!user) {
             return res.status(404).json({
@@ -104,12 +126,19 @@ const verifyTokenWithoutUserLookup = async (req, res, next) => {
         }
 
         const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const tenantId = normalizeTenantId(decodedToken);
+
         req.user = {
             uid: decodedToken.uid,
             id: decodedToken.uid,
             email: decodedToken.email || null,
             name: decodedToken.name || '',
             displayName: decodedToken.name || '',
+            role: ROLES.CUSTOMER,
+            tenant_id: tenantId,
+            tenantId,
+            restaurant_id: tenantId,
+            restaurantId: tenantId,
             isNewUser: true
         };
         next();

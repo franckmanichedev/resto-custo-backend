@@ -20,7 +20,10 @@ class AuthController {
                 success: true,
                 message: result.message,
                 data: result.data,
-                customToken: result.customToken
+                customToken: result.customToken,
+                idToken: result.idToken,
+                refreshToken: result.refreshToken,
+                expiresIn: result.expiresIn
             });
         } catch (error) {
             next(error);

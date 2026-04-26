@@ -1,3 +1,11 @@
+const getRequestTenantId = (req) =>
+    req.tenantId
+    || req.user?.tenant_id
+    || req.user?.tenantId
+    || req.user?.restaurant_id
+    || req.user?.restaurantId
+    || null;
+
 class UserController {
     constructor({ userService }) {
         this.userService = userService;
@@ -5,7 +13,10 @@ class UserController {
 
     getProfile = async (req, res, next) => {
         try {
-            const user = await this.userService.getById(req.params.id);
+            const user = await this.userService.getById(req.params.id, {
+                tenantId: getRequestTenantId(req),
+                actor: req.user || null
+            });
             res.status(200).json({ success: true, data: user });
         } catch (error) {
             next(error);
@@ -14,7 +25,9 @@ class UserController {
 
     getAuthenticatedProfile = async (req, res, next) => {
         try {
-            const user = await this.userService.getAuthenticatedUser(req.user);
+            const user = await this.userService.getAuthenticatedUser(req.user, {
+                tenantId: getRequestTenantId(req)
+            });
             res.status(200).json({ success: true, data: user });
         } catch (error) {
             next(error);
@@ -23,7 +36,10 @@ class UserController {
 
     updateProfile = async (req, res, next) => {
         try {
-            const user = await this.userService.updateProfile(req.params.id, req.body);
+            const user = await this.userService.updateProfile(req.params.id, req.body, {
+                tenantId: getRequestTenantId(req),
+                actor: req.user || null
+            });
             res.status(200).json({
                 success: true,
                 message: 'Profil utilisateur mis a jour avec succes',

@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const verifyFirebaseToken = require('../../shared/middlewares/verifyFirebaseToken');
+const requireTenantScope = require('../../shared/middlewares/requireTenantScope');
 const requireRole = require('../../shared/middlewares/requireRole');
 const validateRequest = require('../../shared/middlewares/validateRequest');
 const parseMultipartPayload = require('../../shared/middlewares/parseMultipartPayload');
@@ -34,6 +35,7 @@ module.exports = ({ categoryController }) => {
     router.post(
         '/types/all',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -43,6 +45,7 @@ module.exports = ({ categoryController }) => {
     router.put(
         '/types/all/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -52,6 +55,7 @@ module.exports = ({ categoryController }) => {
     router.delete(
         '/types/all/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole('admin'),
         categoryController.deleteTypeCategory
     );
@@ -64,6 +68,7 @@ module.exports = ({ categoryController }) => {
     router.post(
         '/',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -81,6 +86,7 @@ module.exports = ({ categoryController }) => {
     router.put(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -90,6 +96,7 @@ module.exports = ({ categoryController }) => {
     router.delete(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         categoryController.deleteCategory
     );

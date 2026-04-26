@@ -1,5 +1,6 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../shared/middlewares/verifyFirebaseToken');
+const requireTenantScope = require('../../shared/middlewares/requireTenantScope');
 const requireRole = require('../../shared/middlewares/requireRole');
 const validateRequest = require('../../shared/middlewares/validateRequest');
 const { createCompositionSchema, updateCompositionSchema } = require('./composition.schema');
@@ -15,6 +16,7 @@ module.exports = ({ compositionController }) => {
     router.post(
         '/',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         validateRequest(createCompositionSchema),
         compositionController.createComposition
@@ -24,6 +26,7 @@ module.exports = ({ compositionController }) => {
     router.put(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         validateRequest(updateCompositionSchema),
         compositionController.updateComposition
@@ -33,6 +36,7 @@ module.exports = ({ compositionController }) => {
     router.delete(
         '/:id',
         verifyFirebaseToken,
+        requireTenantScope(),
         requireRole(['admin', 'menu_manager']),
         compositionController.deleteComposition
     );
