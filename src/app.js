@@ -43,6 +43,9 @@ const {
     clientRouter
 } = createContextRouters(modules);
 
+const verifyFirebaseToken = require('./shared/middlewares/verifyFirebaseToken');
+const requireTenantScope = require('./shared/middlewares/requireTenantScope');
+
 const app = express();
 const frontendRoot = path.resolve(__dirname, '../../resto-qrcode-frontend');
 const frontendPublicRoot = path.join(frontendRoot, 'public');
@@ -85,7 +88,9 @@ app.use((req, res, next) => {
 
 API_PREFIXES.forEach((prefix) => {
     app.use(`${prefix}/platform`, platformRouter);
-    app.use(`${prefix}/restaurant`, restaurantRouter);
+    // Protect restaurant context routes: require authenticated user within tenant scope
+    app.use(`${prefix}/restaurant`, verifyFirebaseToken, requireTenantScope(), restaurantRouter);
+    // Client context remains public (used by public frontend)
     app.use(`${prefix}/client`, clientRouter);
 
     app.use(`${prefix}/auth`, authModule.router);

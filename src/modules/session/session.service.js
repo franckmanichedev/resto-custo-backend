@@ -536,6 +536,32 @@ class SessionService {
             orders: await this.orderService.listSessionOrdersSummary(session.id, restaurantId)
         };
     }
+
+    /**
+     * Ferme manuellement une session de table par l'administrateur.
+     * Respecte strictement le scope du restaurant.
+     */
+    async forceTerminateSession(sessionId, restaurantId) {
+        // 1. Récupération de la session via le repository
+        const session = await this.sessionRepository.findSessionById(sessionId);
+
+        // 2. Vérification de l'existence et de l'appartenance au restaurant (Ta logique stricte)
+        if (!session || !matchesRestaurantScope(session, restaurantId)) {
+            throw new AppError('Session introuvable ou accès non autorisé', 404);
+        }
+
+        // 3. Fermeture : On met la date d'expiration dans le passé pour invalider le token instantanément
+        const now = new Date();
+        const updatePayload = {
+            expires_at: new Date(now.getTime() - 1000).toISOString(), // Expire il y a 1 seconde
+            updatedAt: now.toISOString(),
+            terminated_by: 'admin' // Pour la traçabilité
+        };
+
+        await this.sessionRepository.updateSession(sessionId, updatePayload);
+        
+        return { success: true, message: 'La table est désormais libérée' };
+    }
 }
 
 module.exports = SessionService;

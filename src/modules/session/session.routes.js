@@ -16,6 +16,7 @@ module.exports = ({ sessionController }) => {
     router.post('/orders', validateRequest(jsonBodySchema), sessionController.createOrder);
     router.get('/orders', sessionController.listSessionOrders);
     router.get('/orders/:id', sessionController.getOrderStatus);
+    router.post('/session/:sessionId/terminate', sessionController.terminateSession);
 
     return router;
 };

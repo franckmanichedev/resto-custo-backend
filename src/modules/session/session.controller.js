@@ -103,6 +103,17 @@ class SessionController {
             next(error);
         }
     };
+
+    terminateSession = async (req, res, next) => {
+        try {
+            const { sessionId } = req.params;
+            const restaurantId = resolveRestaurantId(req);
+            const result = await this.sessionService.forceTerminateSession(sessionId, restaurantId);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
 }
 
 module.exports = SessionController;

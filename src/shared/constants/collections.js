@@ -14,5 +14,6 @@ module.exports = {
     ORDER_ITEM_COMPOSITIONS: 'commande_item_compositions',
     CARTS: 'paniers',
     CART_ITEMS: 'panier_items',
-    CART_ITEM_COMPOSITIONS: 'panier_item_compositions'
+    CART_ITEM_COMPOSITIONS: 'panier_item_compositions',
+    RESTAURANTS: 'restaurants'
 };

@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "migrate:menu-items": "node scripts/migrate-plats-to-menu-items.js",
     "migrate:menu-taxonomy": "node scripts/migrate-menu-item-taxonomy.js",
+    "migrate:add-tenant": "node scripts/migrate-add-tenant.js",
     "test": "exit 0"
   },
   "keywords": [],

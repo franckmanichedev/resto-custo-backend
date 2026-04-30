@@ -20,10 +20,18 @@ const normalizeTenantId = (source = {}) => {
 
     return source.tenant_id
         || source.tenantId
-        || source.restaurant_id
-        || source.restaurantId
         || source?.claims?.tenant_id
         || source?.claims?.tenantId
+        || null;
+};
+
+const normalizeRestaurantId = (source = {}) => {
+    if (!source || typeof source !== 'object') {
+        return null;
+    }
+
+    return source.restaurant_id
+        || source.restaurantId
         || source?.claims?.restaurant_id
         || source?.claims?.restaurantId
         || null;
@@ -35,7 +43,12 @@ const normalizeTenantId = (source = {}) => {
  */
 const mapAuthenticatedUser = (decodedToken, userData = null) => {
     const roleVal = normalizeRole(userData?.role) || ROLES.CUSTOMER;
+
     const tenantId = normalizeTenantId(userData) || normalizeTenantId(decodedToken);
+    // Si restaurantId est absent, on retombe sur tenantId (compat avec l'ancien modèle)
+    const restaurantId = normalizeRestaurantId(userData)
+        || normalizeRestaurantId(decodedToken)
+        || tenantId;
 
     return {
         uid: decodedToken.uid,
@@ -49,8 +62,8 @@ const mapAuthenticatedUser = (decodedToken, userData = null) => {
         isActive: userData?.isActive,
         tenant_id: tenantId,
         tenantId,
-        restaurant_id: tenantId,
-        restaurantId: tenantId
+        restaurant_id: restaurantId,
+        restaurantId
     };
 };
 

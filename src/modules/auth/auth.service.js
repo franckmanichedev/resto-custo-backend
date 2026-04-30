@@ -4,6 +4,8 @@ const UserEntity = require('../../core/entities/User');
 const logger = require('../../shared/utils/logger');
 const sanitize = require('../../shared/utils/sanitizer');
 const { ROLES, normalizeRole, isPlatformRole } = require('../../shared/constants/roles');
+const { db } = require('../../infrastructure/firebase/firebaseAdmin');
+const { RESTAURANTS } = require('../../shared/constants/collections');
 
 const normalizeTenantId = (payload = {}) => {
     const tenantId = payload.tenant_id ?? payload.tenantId ?? payload.restaurant_id ?? payload.restaurantId;
@@ -43,6 +45,30 @@ class AuthService {
         });
 
         await this.userRepository.create(user.id, user);
+        // Ensure a restaurants entry exists for this tenant/restaurant id
+        if (tenantId) {
+            try {
+                const restRef = db.collection(RESTAURANTS).doc(tenantId);
+                const restDoc = await restRef.get();
+                if (!restDoc.exists) {
+                    const restaurantPayload = {
+                        id: tenantId,
+                        name: payload.restaurantName || payload.businessName || `${payload.name || 'Restaurant'}`,
+                        ownerId: user.id,
+                        tenant_id: tenantId,
+                        tenantId: tenantId,
+                        restaurant_id: tenantId,
+                        restaurantId: tenantId,
+                        createdAt: timestamp,
+                        updatedAt: timestamp
+                    };
+
+                    await restRef.set(restaurantPayload);
+                }
+            } catch (err) {
+                logger.warn('Impossible de creer le document restaurant', { error: err.message, tenantId });
+            }
+        }
 
         return { statusCode: 201, message: 'Utilisateur cree', data: user };
     }

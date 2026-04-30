@@ -1,5 +1,3 @@
-const { resolveRestaurantId } = require('../../shared/utils/tenant');
-
 class TableController {
     constructor({ tableService }) {
         this.tableService = tableService;
@@ -7,7 +5,7 @@ class TableController {
 
     createTable = async (req, res, next) => {
         try {
-            const data = await this.tableService.create(req.body, resolveRestaurantId(req));
+            const data = await this.tableService.create(req.body, req.tenantId, req.restaurantId);
             res.status(201).json({ success: true, message: 'Table creee avec succes', data });
         } catch (error) {
             next(error);
@@ -16,7 +14,7 @@ class TableController {
 
     listTables = async (req, res, next) => {
         try {
-            const data = await this.tableService.list(resolveRestaurantId(req));
+            const data = await this.tableService.list(req.tenantId, req.restaurantId);
             res.status(200).json({ success: true, count: data.length, data });
         } catch (error) {
             next(error);
@@ -25,7 +23,7 @@ class TableController {
 
     getTableById = async (req, res, next) => {
         try {
-            const data = await this.tableService.getById(req.params.id, resolveRestaurantId(req));
+            const data = await this.tableService.getById(req.params.id, req.tenantId, req.restaurantId);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -34,7 +32,7 @@ class TableController {
 
     updateTable = async (req, res, next) => {
         try {
-            const data = await this.tableService.update(req.params.id, req.body, resolveRestaurantId(req));
+            const data = await this.tableService.update(req.params.id, req.body, req.tenantId, req.restaurantId);
             res.status(200).json({ success: true, message: 'Table mise a jour avec succes', data });
         } catch (error) {
             next(error);
@@ -43,7 +41,7 @@ class TableController {
 
     deleteTable = async (req, res, next) => {
         try {
-            await this.tableService.delete(req.params.id, resolveRestaurantId(req));
+            await this.tableService.delete(req.params.id, req.tenantId, req.restaurantId);
             res.status(200).json({ success: true, message: 'Table supprimee avec succes' });
         } catch (error) {
             next(error);
@@ -52,7 +50,7 @@ class TableController {
 
     getTableMenu = async (req, res, next) => {
         try {
-            const data = await this.tableService.getMenu(req.params.id, resolveRestaurantId(req));
+            const data = await this.tableService.getMenu(req.params.id, req.tenantId, req.restaurantId);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -61,7 +59,7 @@ class TableController {
 
     getTableMenuByQrCode = async (req, res, next) => {
         try {
-            const data = await this.tableService.getMenuByQrCode(req.params.qrCode, resolveRestaurantId(req));
+            const data = await this.tableService.getMenuByQrCode(req.params.qrCode, req.tenantId, req.restaurantId);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
