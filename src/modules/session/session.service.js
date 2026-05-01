@@ -59,15 +59,23 @@ class SessionService {
     }
 
     async getTableByInput(payload, restaurantId) {
+        const { DEFAULT_RESTAURANT_ID } = require('../../shared/utils/tenant');
+
         if (isNonEmptyString(payload.table_id)) {
             const table = await this.tableRepository.findById(payload.table_id.trim());
-            if (table && matchesRestaurantScope(table, restaurantId)) {
+            // Allow match when table belongs to restaurant scope OR when request came without a specific restaurant scope
+            if (table && (matchesRestaurantScope(table, restaurantId) || restaurantId === DEFAULT_RESTAURANT_ID)) {
                 return table;
             }
         }
 
         if (isNonEmptyString(payload.qr_code)) {
-            const tables = filterByRestaurantScope(await this.tableRepository.findByQrCode(payload.qr_code.trim()), restaurantId);
+            // If no explicit restaurantId provided (default), don't filter by scope so public QR codes still resolve
+            const rawTables = await this.tableRepository.findByQrCode(payload.qr_code.trim());
+            const tables = restaurantId === DEFAULT_RESTAURANT_ID
+                ? rawTables
+                : filterByRestaurantScope(rawTables, restaurantId);
+
             if (tables.length > 0) {
                 return tables[0];
             }

@@ -31,21 +31,23 @@ class AuthService {
 
         const timestamp = new Date().toISOString();
         const normalizedRole = normalizeRole(firebaseUser.role);
+        const tenantId = normalizeTenantId(firebaseUser);
+
         const user = UserEntity.create({
             id: firebaseUser.uid,
             name: firebaseUser.name || firebaseUser.displayName || '',
             email: firebaseUser.email || null,
             role: normalizedRole && !isPlatformRole(normalizedRole) ? normalizedRole : ROLES.CUSTOMER,
-            tenant_id: normalizeTenantId(firebaseUser),
-            tenantId: normalizeTenantId(firebaseUser),
-            restaurant_id: normalizeTenantId(firebaseUser),
-            restaurantId: normalizeTenantId(firebaseUser),
+            tenant_id: tenantId,
+            tenantId: tenantId,
+            restaurant_id: tenantId,
+            restaurantId: tenantId,
             createdAt: timestamp,
             updatedAt: timestamp
         });
 
         await this.userRepository.create(user.id, user);
-        // Ensure a restaurants entry exists for this tenant/restaurant id
+        // Create restaurants entry for tenantId if not exists
         if (tenantId) {
             try {
                 const restRef = db.collection(RESTAURANTS).doc(tenantId);
@@ -53,17 +55,47 @@ class AuthService {
                 if (!restDoc.exists) {
                     const restaurantPayload = {
                         id: tenantId,
-                        name: payload.restaurantName || payload.businessName || `${payload.name || 'Restaurant'}`,
-                        ownerId: user.id,
+                        name: payload.restaurantName || payload.businessName || payload.name || `Restaurant ${tenantId}`,
+                        owner_user_id: user.id,
+                        tenant_id: tenantId,
+                        tenantId: tenantId,
+                        restaurant_id: tenantId,
+                        restaurantId: tenantId,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        metadata: { createdBy: 'signup' }
+                    };
+
+                    await restRef.set(restaurantPayload);
+                    logger.info('Restaurant document created during signup', { restaurantId: tenantId });
+                }
+            } catch (err) {
+                logger.warn('Impossible de creer le document restaurant pendant signup', { error: err.message, tenantId });
+            }
+        }
+
+        // Ensure a restaurants entry exists for this tenant/restaurant id
+        if (tenantId) {
+            try {
+                const restRef = db.collection(RESTAURANTS).doc(tenantId);
+                const restDoc = await restRef.get();
+                if (!restDoc.exists) {
+                    const restaurantName = firebaseUser.restaurantName || firebaseUser.businessName || firebaseUser.name || `Restaurant ${tenantId}`;
+                    const restaurantPayload = {
+                        id: tenantId,
+                        name: restaurantName,
+                        owner_user_id: user.id,
                         tenant_id: tenantId,
                         tenantId: tenantId,
                         restaurant_id: tenantId,
                         restaurantId: tenantId,
                         createdAt: timestamp,
-                        updatedAt: timestamp
+                        updatedAt: timestamp,
+                        metadata: { createdBy: 'signup' }
                     };
 
                     await restRef.set(restaurantPayload);
+                    logger.info('Restaurant document created from firebase token', { restaurantId: tenantId });
                 }
             } catch (err) {
                 logger.warn('Impossible de creer le document restaurant', { error: err.message, tenantId });
