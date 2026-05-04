@@ -25,7 +25,7 @@ class TableService {
     }
 
     buildTableMenuUrl(tableId) {
-        return `${getFrontendBaseUrl().replace(/\/$/, '')}/menu.html?table=${tableId}`;
+        return `${getFrontendBaseUrl().replace(/\/$/, '')}/client/loading.html?table=${tableId}`;
     }
 
     async ensureUniqueTableNumber(number, tenantId, restaurantId, excludeId = null) {

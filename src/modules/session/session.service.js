@@ -4,8 +4,21 @@ const SessionEntity = require('../../core/entities/Session');
 const { WEEK_DAYS, SESSION_DURATION_MINUTES } = require('../../shared/constants/business');
 const { buildSessionPayload } = require('../../core/use-cases/orderFlow');
 const { getCurrentWeekDay, isMenuItemAvailableForDay } = require('../../core/use-cases/menuCatalog');
-const { filterByRestaurantScope, matchesRestaurantScope, withRestaurantScope } = require('../../shared/utils/tenant');
+const {
+    DEFAULT_RESTAURANT_ID,
+    filterByRestaurantScope,
+    matchesRestaurantScope,
+    withRestaurantScope
+} = require('../../shared/utils/tenant');
 const { isNonEmptyString } = require('../../shared/utils/normalizers');
+
+const getScopedRestaurantId = (entity) => (
+    entity?.restaurant_id
+    || entity?.restaurantId
+    || entity?.tenant_id
+    || entity?.tenantId
+    || null
+);
 
 class SessionService {
     constructor({ sessionRepository, tableRepository, platService, orderService }) {
@@ -59,8 +72,6 @@ class SessionService {
     }
 
     async getTableByInput(payload, restaurantId) {
-        const { DEFAULT_RESTAURANT_ID } = require('../../shared/utils/tenant');
-
         if (isNonEmptyString(payload.table_id)) {
             const table = await this.tableRepository.findById(payload.table_id.trim());
             // Allow match when table belongs to restaurant scope OR when request came without a specific restaurant scope
@@ -82,6 +93,14 @@ class SessionService {
         }
 
         return null;
+    }
+
+    resolveEffectiveRestaurantId(requestedRestaurantId, scopedEntity) {
+        if (requestedRestaurantId && requestedRestaurantId !== DEFAULT_RESTAURANT_ID) {
+            return requestedRestaurantId;
+        }
+
+        return getScopedRestaurantId(scopedEntity) || requestedRestaurantId || DEFAULT_RESTAURANT_ID;
     }
 
     async maybeExtendSessionForActiveOrders(session, restaurantId) {
@@ -131,11 +150,16 @@ class SessionService {
         }
 
         const session = await this.sessionRepository.findSessionByToken(sessionToken.trim());
-        if (!session || !matchesRestaurantScope(session, restaurantId)) {
+        if (!session) {
             throw new AppError('Session de table introuvable', 404);
         }
 
-        return this.maybeExtendSessionForActiveOrders(session, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
+        if (!matchesRestaurantScope(session, effectiveRestaurantId)) {
+            throw new AppError('Session de table introuvable', 404);
+        }
+
+        return this.maybeExtendSessionForActiveOrders(session, effectiveRestaurantId);
     }
 
     async getOrCreateActiveCartForSession(session) {
@@ -250,12 +274,13 @@ class SessionService {
             throw new AppError('Table introuvable ou inactive', 404);
         }
 
-        const existingSession = await this.getLatestActiveSessionForTable(table.id, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, table);
+        const existingSession = await this.getLatestActiveSessionForTable(table.id, effectiveRestaurantId);
         if (existingSession) {
             return {
                 statusCode: 200,
                 message: 'Session de table existante reutilisee',
-                data: await this.getMenuPayloadForSession(existingSession, getCurrentWeekDay(), restaurantId)
+                data: await this.getMenuPayloadForSession(existingSession, getCurrentWeekDay(), effectiveRestaurantId)
             };
         }
 
@@ -268,29 +293,31 @@ class SessionService {
             expires_at: this.getSessionExpirationDate().toISOString(),
             created_at: now,
             createdAt: now
-        }, restaurantId));
+        }, effectiveRestaurantId));
 
         await this.sessionRepository.createSession(ref.id, session);
 
         return {
             statusCode: 201,
             message: 'Session de table creee avec succes',
-            data: await this.getMenuPayloadForSession(session, getCurrentWeekDay(), restaurantId)
+            data: await this.getMenuPayloadForSession(session, getCurrentWeekDay(), effectiveRestaurantId)
         };
     }
 
     async getSessionMenu(sessionToken, day, restaurantId) {
         const session = await this.getValidatedSession(sessionToken, restaurantId);
-        return this.getMenuPayloadForSession(session, day, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
+        return this.getMenuPayloadForSession(session, day, effectiveRestaurantId);
     }
 
     async getPlatDetail(platId, query, restaurantId) {
         const session = await this.getValidatedSession(query.session_token, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         const currentDay = getCurrentWeekDay();
         const requestedDay = this.validateRequestedDay(query.day || currentDay);
         const [table, plat] = await Promise.all([
             this.tableRepository.findById(session.table_id),
-            this.platService.getById(platId, restaurantId, { currentDay, requestedDay })
+            this.platService.getById(platId, effectiveRestaurantId, { currentDay, requestedDay })
         ]);
 
         return {
@@ -304,17 +331,19 @@ class SessionService {
 
     async getCart(sessionToken, restaurantId) {
         const session = await this.getValidatedSession(sessionToken, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         const cart = await this.getOrCreateActiveCartForSession(session);
 
         return {
             session: buildSessionPayload(session),
-            cart: await this.buildCartSummary(cart, restaurantId),
-            orders: await this.orderService.listSessionOrdersSummary(session.id, restaurantId)
+            cart: await this.buildCartSummary(cart, effectiveRestaurantId),
+            orders: await this.orderService.listSessionOrdersSummary(session.id, effectiveRestaurantId)
         };
     }
 
     async addCartItem(payload, restaurantId) {
         const session = await this.getValidatedSession(payload.session_token, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         const currentDay = getCurrentWeekDay();
         const normalizedLineItems = this.normalizeCartLineItems(payload);
 
@@ -322,7 +351,7 @@ class SessionService {
             throw new AppError('plat_id est requis', 400);
         }
 
-        const plat = await this.platService.getById(payload.plat_id.trim(), restaurantId, { currentDay });
+        const plat = await this.platService.getById(payload.plat_id.trim(), effectiveRestaurantId, { currentDay });
         if (!isMenuItemAvailableForDay(plat, currentDay)) {
             throw new AppError('Ce plat n est pas commandable aujourd hui', 400);
         }
@@ -358,11 +387,12 @@ class SessionService {
         }
 
         await this.sessionRepository.updateCart(cart.id, { updated_at: now, updatedAt: now });
-        return { cart: await this.buildCartSummary(await this.getOrCreateActiveCartForSession(session), restaurantId) };
+        return { cart: await this.buildCartSummary(await this.getOrCreateActiveCartForSession(session), effectiveRestaurantId) };
     }
 
     async updateCartItem(itemId, payload, restaurantId) {
         const session = await this.getValidatedSession(payload.session_token, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         const cart = await this.getOrCreateActiveCartForSession(session);
         const item = await this.sessionRepository.findCartItemById(itemId);
 
@@ -389,11 +419,12 @@ class SessionService {
 
         await this.sessionRepository.replaceCartItemCompositions(itemId, actions);
         await this.sessionRepository.updateCart(cart.id, { updated_at: now, updatedAt: now });
-        return { cart: await this.buildCartSummary(cart, restaurantId) };
+        return { cart: await this.buildCartSummary(cart, effectiveRestaurantId) };
     }
 
     async removeCartItem(itemId, sessionToken, restaurantId) {
         const session = await this.getValidatedSession(sessionToken, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         const cart = await this.getOrCreateActiveCartForSession(session);
         const item = await this.sessionRepository.findCartItemById(itemId);
 
@@ -403,15 +434,16 @@ class SessionService {
 
         await this.sessionRepository.deleteCartItemCompositions(itemId);
         await this.sessionRepository.deleteCartItem(itemId);
-        return { cart: await this.buildCartSummary(cart, restaurantId) };
+        return { cart: await this.buildCartSummary(cart, effectiveRestaurantId) };
     }
 
     async createOrder(payload, restaurantId) {
         this.validateOrderPayload(payload);
 
         const session = await this.getValidatedSession(payload.session_token, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         const currentDay = getCurrentWeekDay();
-        const customer = await this.orderService.ensureCustomer(payload.customer, restaurantId);
+        const customer = await this.orderService.ensureCustomer(payload.customer, effectiveRestaurantId);
         const normalizedItems = [];
 
         for (const item of payload.items) {
@@ -419,7 +451,7 @@ class SessionService {
                 throw new AppError('Chaque item doit contenir plat_id et quantity >= 1', 400);
             }
 
-            const plat = await this.platService.getById(item.plat_id.trim(), restaurantId, { currentDay });
+            const plat = await this.platService.getById(item.plat_id.trim(), effectiveRestaurantId, { currentDay });
             if (!isMenuItemAvailableForDay(plat, currentDay)) {
                 throw new AppError(`Le plat ${plat.name} n est pas commandable aujourd hui`, 400);
             }
@@ -455,13 +487,13 @@ class SessionService {
             customer,
             note: payload.note,
             normalizedItems,
-            restaurantId
+            restaurantId: effectiveRestaurantId
         });
 
         return {
             session: buildSessionPayload(session),
             order,
-            orders: await this.orderService.listSessionOrdersSummary(session.id, restaurantId)
+            orders: await this.orderService.listSessionOrdersSummary(session.id, effectiveRestaurantId)
         };
     }
 
@@ -471,19 +503,20 @@ class SessionService {
         }
 
         const session = await this.getValidatedSession(payload.session_token, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         const cart = await this.getOrCreateActiveCartForSession(session);
-        const cartSummary = await this.buildCartSummary(cart, restaurantId);
+        const cartSummary = await this.buildCartSummary(cart, effectiveRestaurantId);
 
         if (!cartSummary.items.length) {
             throw new AppError('Le panier est vide', 400);
         }
 
-        const customer = await this.orderService.ensureCustomer(payload.customer || {}, restaurantId);
+        const customer = await this.orderService.ensureCustomer(payload.customer || {}, effectiveRestaurantId);
         const currentDay = getCurrentWeekDay();
         const normalizedItems = [];
 
         for (const item of cartSummary.items) {
-            const plat = await this.platService.getById(item.plat_id, restaurantId, { currentDay });
+            const plat = await this.platService.getById(item.plat_id, effectiveRestaurantId, { currentDay });
             if (!isMenuItemAvailableForDay(plat, currentDay)) {
                 throw new AppError(`Le plat ${plat.name} n est pas commandable aujourd hui`, 400);
             }
@@ -504,7 +537,7 @@ class SessionService {
             note: payload.note,
             normalizedItems,
             sourceCartId: cart.id,
-            restaurantId
+            restaurantId: effectiveRestaurantId
         });
 
         const now = new Date().toISOString();
@@ -517,15 +550,16 @@ class SessionService {
         const nextCart = await this.getOrCreateActiveCartForSession(session);
         return {
             session: buildSessionPayload(session),
-            cart: await this.buildCartSummary(nextCart, restaurantId),
+            cart: await this.buildCartSummary(nextCart, effectiveRestaurantId),
             order,
-            orders: await this.orderService.listSessionOrdersSummary(session.id, restaurantId)
+            orders: await this.orderService.listSessionOrdersSummary(session.id, effectiveRestaurantId)
         };
     }
 
     async getOrderStatus(orderId, sessionToken, restaurantId) {
         const session = await this.getValidatedSession(sessionToken, restaurantId);
-        const order = await this.orderService.getById(orderId, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
+        const order = await this.orderService.getById(orderId, effectiveRestaurantId);
 
         if (order.table_id !== session.table_id) {
             throw new AppError('Cette commande ne correspond pas a la table de la session', 403);
@@ -539,9 +573,10 @@ class SessionService {
 
     async listSessionOrders(sessionToken, restaurantId) {
         const session = await this.getValidatedSession(sessionToken, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
         return {
             session: buildSessionPayload(session),
-            orders: await this.orderService.listSessionOrdersSummary(session.id, restaurantId)
+            orders: await this.orderService.listSessionOrdersSummary(session.id, effectiveRestaurantId)
         };
     }
 
