@@ -20,6 +20,19 @@ const getScopedRestaurantId = (entity) => (
     || null
 );
 
+const normalizeCompositionActions = (actions = []) => (actions || [])
+    .filter((action) => isNonEmptyString(action.composition_id) && isNonEmptyString(action.action))
+    .map((action) => ({
+        composition_id: action.composition_id.trim(),
+        action: action.action.trim().toLowerCase()
+    }))
+    .sort((a, b) => `${a.composition_id}:${a.action}`.localeCompare(`${b.composition_id}:${b.action}`));
+
+const getCompositionSignature = (actions = []) =>
+    normalizeCompositionActions(actions)
+        .map((action) => `${action.composition_id}:${action.action}`)
+        .join('|');
+
 class SessionService {
     constructor({ sessionRepository, tableRepository, platService, orderService }) {
         this.sessionRepository = sessionRepository;
@@ -223,6 +236,20 @@ class SessionService {
         };
     }
 
+    async findMatchingCartItem(cartId, platId, compositionActions) {
+        const items = (await this.sessionRepository.listCartItems(cartId))
+            .filter((item) => item.plat_id === platId);
+
+        if (!items.length) {
+            return null;
+        }
+
+        const targetSignature = getCompositionSignature(compositionActions);
+        const actionDocsByItemId = await this.sessionRepository.listCartItemCompositionsBatch(items.map((item) => item.id));
+
+        return items.find((item) => getCompositionSignature(actionDocsByItemId.get(item.id) || []) === targetSignature) || null;
+    }
+
     async getMenuPayloadForSession(session, requestedDay, restaurantId) {
         const currentDay = getCurrentWeekDay();
         const day = this.validateRequestedDay(requestedDay);
@@ -360,6 +387,17 @@ class SessionService {
         const now = new Date().toISOString();
 
         for (const lineItem of normalizedLineItems) {
+            const actions = normalizeCompositionActions(lineItem.composition_actions);
+            const matchingItem = await this.findMatchingCartItem(cart.id, plat.id, actions);
+            if (matchingItem) {
+                await this.sessionRepository.updateCartItem(matchingItem.id, {
+                    quantity: Number(matchingItem.quantity || 0) + Number(lineItem.quantity || 1),
+                    updated_at: now,
+                    updatedAt: now
+                });
+                continue;
+            }
+
             const itemRef = this.sessionRepository.createCartItemRef();
             await this.sessionRepository.createCartItem(itemRef.id, {
                 id: itemRef.id,
@@ -374,16 +412,11 @@ class SessionService {
                 updatedAt: now
             });
 
-            const actions = (lineItem.composition_actions || [])
-                .filter((action) => isNonEmptyString(action.composition_id) && isNonEmptyString(action.action))
-                .map((action) => ({
-                    composition_id: action.composition_id.trim(),
-                    action: action.action.trim().toLowerCase(),
-                    created_at: now,
-                    createdAt: now
-                }));
-
-            await this.sessionRepository.replaceCartItemCompositions(itemRef.id, actions);
+            await this.sessionRepository.replaceCartItemCompositions(itemRef.id, actions.map((action) => ({
+                ...action,
+                created_at: now,
+                createdAt: now
+            })));
         }
 
         await this.sessionRepository.updateCart(cart.id, { updated_at: now, updatedAt: now });
