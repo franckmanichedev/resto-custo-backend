@@ -6,6 +6,7 @@ module.exports = ({ sessionController }) => {
     const router = express.Router();
 
     router.post('/session/start', validateRequest(startTableSessionSchema), sessionController.startTableSession);
+    router.get('/plats', sessionController.listAllPlats);
     router.get('/menu/:sessionToken', sessionController.getSessionMenu);
     router.get('/plats/:id', sessionController.getPlatDetail);
     router.get('/cart/:sessionToken', sessionController.getCart);

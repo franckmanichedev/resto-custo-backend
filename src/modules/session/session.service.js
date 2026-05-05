@@ -356,6 +356,16 @@ class SessionService {
         };
     }
 
+    async listAllPlatsForSession(sessionToken, query = {}, restaurantId) {
+        const session = await this.getValidatedSession(sessionToken, restaurantId);
+        const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);
+
+        // If query.all is present we return full list, otherwise respect filters in query
+        const plats = await this.platService.list(query || {}, effectiveRestaurantId, {});
+
+        return { session: buildSessionPayload(session), plats };
+    }
+
     async getCart(sessionToken, restaurantId) {
         const session = await this.getValidatedSession(sessionToken, restaurantId);
         const effectiveRestaurantId = this.resolveEffectiveRestaurantId(restaurantId, session);

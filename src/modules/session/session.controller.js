@@ -32,6 +32,15 @@ class SessionController {
         }
     };
 
+    listAllPlats = async (req, res, next) => {
+        try {
+            const data = await this.sessionService.listAllPlatsForSession(req.query.session_token, req.query, resolveRestaurantId(req));
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            next(error);
+        }
+    };
+
     getCart = async (req, res, next) => {
         try {
             const data = await this.sessionService.getCart(req.params.sessionToken, resolveRestaurantId(req));
