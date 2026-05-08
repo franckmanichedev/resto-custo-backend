@@ -3,6 +3,7 @@ const createUserModule = require('./user');
 const createCompositionModule = require('./composition');
 const createCategoryModule = require('./category');
 const createOrderModule = require('./order');
+const createClientsModule = require('./clients');
 const createPlatModule = require('./plat');
 const createTableModule = require('./table');
 const createSessionModule = require('./session');
@@ -13,6 +14,7 @@ module.exports = () => {
     const compositionModule = createCompositionModule();
     const categoryModule = createCategoryModule();
     const orderModule = createOrderModule();
+    const clientsModule = createClientsModule({ orderRepository: orderModule.orderRepository });
     const platModule = createPlatModule({
         compositionRepository: compositionModule.compositionRepository,
         categoryRepository: categoryModule.categoryRepository
@@ -32,6 +34,7 @@ module.exports = () => {
         compositionModule,
         categoryModule,
         orderModule,
+        clientsModule,
         platModule,
         tableModule,
         sessionModule

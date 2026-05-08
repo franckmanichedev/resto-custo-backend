@@ -16,6 +16,7 @@ module.exports = (modules = {}) => {
         compositionModule,
         categoryModule,
         orderModule,
+        clientsModule,
         platModule,
         tableModule,
         sessionModule
@@ -42,6 +43,7 @@ module.exports = (modules = {}) => {
     mountIfAvailable(restaurantRouter, '/categories', categoryModule);
     mountIfAvailable(restaurantRouter, '/plats', platModule);
     mountIfAvailable(restaurantRouter, '/tables', tableModule);
+    mountIfAvailable(restaurantRouter, '/clients', clientsModule);
     mountIfAvailable(restaurantRouter, '/orders', orderModule);
 
     const clientRouter = express.Router();
