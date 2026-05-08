@@ -4,6 +4,7 @@ const { ACTIVE_ORDER_STATUSES, ALLOWED_ORDER_STATUSES } = require('../../shared/
 const { buildSessionPayload, buildPreparationState } = require('../../core/use-cases/orderFlow');
 const { filterByRestaurantScope, matchesRestaurantScope, withRestaurantScope } = require('../../shared/utils/tenant');
 const { isNonEmptyString } = require('../../shared/utils/normalizers');
+const socketHelper = require('../../shared/socket');
 
 class OrderService {
     constructor({ orderRepository }) {
@@ -158,7 +159,25 @@ class OrderService {
         }
 
         await this.orderRepository.updateOrder(id, updatePayload);
-        return this.buildOrderSummary(id, restaurantId);
+        const summary = await this.buildOrderSummary(id, restaurantId);
+
+        try {
+            const io = socketHelper.getIo && socketHelper.getIo();
+            if (io) {
+                const room = restaurantId ? `restaurant_${restaurantId}_kitchen` : 'kitchen';
+                io.to(room).emit('order_status_changed', summary);
+
+                // emit lightweight stats update
+                const allOrders = await this.orderRepository.listOrders();
+                const pendingCount = allOrders.filter((o) => (o.status === 'pending') && (!restaurantId || matchesRestaurantScope(o, restaurantId))).length;
+                const statsRoom = restaurantId ? `restaurant_${restaurantId}_dashboard` : 'dashboard';
+                io.to(statsRoom).emit('stats_updated', { pending: pendingCount });
+            }
+        } catch (err) {
+            console.warn('socket emit failed', err.message);
+        }
+
+        return summary;
     }
 
     // Méthode utilitaire pour s'assurer qu'un client existe ou en créer un nouveau à partir des informations fournies, avec validation des données et respect du scope du restaurant
@@ -279,7 +298,26 @@ class OrderService {
             });
 
             // Une fois la transaction validée, on construit le résumé complet
-            return this.buildOrderSummary(orderId, restaurantId);
+            const summary = await this.buildOrderSummary(orderId, restaurantId);
+
+
+            try {
+                const io = socketHelper.getIo && socketHelper.getIo();
+                if (io) {
+                    const room = restaurantId ? `restaurant_${restaurantId}_kitchen` : 'kitchen';
+                    io.to(room).emit('new_order', summary);
+
+                    // emit lightweight stats update
+                    const allOrders = await this.orderRepository.listOrders();
+                    const pendingCount = allOrders.filter((o) => (o.status === 'pending') && (!restaurantId || matchesRestaurantScope(o, restaurantId))).length;
+                    const statsRoom = restaurantId ? `restaurant_${restaurantId}_dashboard` : 'dashboard';
+                    io.to(statsRoom).emit('stats_updated', { pending: pendingCount });
+                }
+            } catch (err) {
+                console.warn('socket emit failed', err.message);
+            }
+
+            return summary;
         } catch (error) {
             // En cas d'erreur dans la transaction, Firestore annule tout automatiquement
             console.error('Erreur transaction création commande:', error);
