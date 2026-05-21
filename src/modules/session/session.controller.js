@@ -7,7 +7,7 @@ class SessionController {
 
     startTableSession = async (req, res, next) => {
         try {
-            const result = await this.sessionService.startTableSession(req.body, resolveRestaurantId(req));
+            const result = await this.sessionService.startTableSession(req.body, resolveRestaurantId(req), req.saas);
             res.status(result.statusCode).json({ success: true, message: result.message, data: result.data });
         } catch (error) {
             next(error);
@@ -16,7 +16,7 @@ class SessionController {
 
     getSessionMenu = async (req, res, next) => {
         try {
-            const data = await this.sessionService.getSessionMenu(req.params.sessionToken, req.query.day, resolveRestaurantId(req));
+            const data = await this.sessionService.getSessionMenu(req.params.sessionToken, req.query.day, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -25,7 +25,7 @@ class SessionController {
 
     getPlatDetail = async (req, res, next) => {
         try {
-            const data = await this.sessionService.getPlatDetail(req.params.id, req.query, resolveRestaurantId(req));
+            const data = await this.sessionService.getPlatDetail(req.params.id, req.query, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -34,7 +34,7 @@ class SessionController {
 
     listAllPlats = async (req, res, next) => {
         try {
-            const data = await this.sessionService.listAllPlatsForSession(req.query.session_token, req.query, resolveRestaurantId(req));
+            const data = await this.sessionService.listAllPlatsForSession(req.query.session_token, req.query, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -43,7 +43,7 @@ class SessionController {
 
     getCart = async (req, res, next) => {
         try {
-            const data = await this.sessionService.getCart(req.params.sessionToken, resolveRestaurantId(req));
+            const data = await this.sessionService.getCart(req.params.sessionToken, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -52,7 +52,7 @@ class SessionController {
 
     addCartItem = async (req, res, next) => {
         try {
-            const data = await this.sessionService.addCartItem(req.body, resolveRestaurantId(req));
+            const data = await this.sessionService.addCartItem(req.body, resolveRestaurantId(req), req.saas);
             res.status(201).json({ success: true, message: 'Item(s) ajoute(s) au panier', data });
         } catch (error) {
             next(error);
@@ -61,7 +61,7 @@ class SessionController {
 
     updateCartItem = async (req, res, next) => {
         try {
-            const data = await this.sessionService.updateCartItem(req.params.itemId, req.body, resolveRestaurantId(req));
+            const data = await this.sessionService.updateCartItem(req.params.itemId, req.body, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Element du panier mis a jour', data });
         } catch (error) {
             next(error);
@@ -70,7 +70,7 @@ class SessionController {
 
     removeCartItem = async (req, res, next) => {
         try {
-            const data = await this.sessionService.removeCartItem(req.params.itemId, req.query.session_token, resolveRestaurantId(req));
+            const data = await this.sessionService.removeCartItem(req.params.itemId, req.query.session_token, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Element retire du panier', data });
         } catch (error) {
             next(error);
@@ -79,7 +79,7 @@ class SessionController {
 
     createOrder = async (req, res, next) => {
         try {
-            const data = await this.sessionService.createOrder(req.body, resolveRestaurantId(req));
+            const data = await this.sessionService.createOrder(req.body, resolveRestaurantId(req), req.saas);
             res.status(201).json({ success: true, message: 'Commande envoyee avec succes', data });
         } catch (error) {
             next(error);
@@ -88,7 +88,7 @@ class SessionController {
 
     checkoutCart = async (req, res, next) => {
         try {
-            const data = await this.sessionService.checkoutCart(req.body, resolveRestaurantId(req));
+            const data = await this.sessionService.checkoutCart(req.body, resolveRestaurantId(req), req.saas);
             res.status(201).json({ success: true, message: 'Commande envoyee a partir du panier', data });
         } catch (error) {
             next(error);
@@ -97,7 +97,7 @@ class SessionController {
 
     getOrderStatus = async (req, res, next) => {
         try {
-            const data = await this.sessionService.getOrderStatus(req.params.id, req.query.session_token, resolveRestaurantId(req));
+            const data = await this.sessionService.getOrderStatus(req.params.id, req.query.session_token, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -106,7 +106,7 @@ class SessionController {
 
     listSessionOrders = async (req, res, next) => {
         try {
-            const data = await this.sessionService.listSessionOrders(req.query.session_token, resolveRestaurantId(req));
+            const data = await this.sessionService.listSessionOrders(req.query.session_token, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -117,7 +117,7 @@ class SessionController {
         try {
             const { sessionId } = req.params;
             const restaurantId = resolveRestaurantId(req);
-            const result = await this.sessionService.forceTerminateSession(sessionId, restaurantId);
+            const result = await this.sessionService.forceTerminateSession(sessionId, restaurantId, req.saas);
             res.status(200).json(result);
         } catch (error) {
             next(error);

@@ -1,6 +1,7 @@
 const { db } = require('../../infrastructure/firebase/firebaseAdmin');
 const { COMPOSITIONS, MENU_ITEM_COMPOSITIONS } = require('../../shared/constants/collections');
 const { serializeDoc, toFirestoreData } = require('../../shared/utils/firestore');
+const { buildScopedFirestoreQuery } = require('../../shared/utils/scopedFirestore');
 
 class CompositionRepository {
     constructor(firestore = db) {
@@ -20,6 +21,23 @@ class CompositionRepository {
     async listAll() {
         const snapshot = await this.collection.orderBy('name').get();
         return snapshot.docs.map(serializeDoc);
+    }
+
+    async listScoped(scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.collection,
+                scope: { ...scope, restaurantId },
+                orderBy: [['name', 'asc']]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) {
+                return this.listAll();
+            }
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listAll();
+        }
     }
 
     async findByNormalizedName(normalizedName) {

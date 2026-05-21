@@ -1,18 +1,24 @@
 const AppError = require('../../shared/errors/AppError');
 const CompositionEntity = require('../../core/entities/Composition');
 const { normalizeName } = require('../../shared/utils/normalizers');
-const { filterByRestaurantScope, matchesRestaurantScope, withRestaurantScope } = require('../../shared/utils/tenant');
+const {
+    assertBranchOwnership,
+    filterByBusinessScope,
+    matchesBusinessScope,
+    withBusinessScope
+} = require('../../shared/utils/scopedFirestore');
 
 class CompositionService {
     constructor({ compositionRepository }) {
         this.compositionRepository = compositionRepository;
     }
 
-    async create(payload, restaurantId) {
+    async create(payload, restaurantId, scope = {}) {
         const normalizedName = normalizeName(payload.name);
-        const duplicates = filterByRestaurantScope(
+        const duplicates = filterByBusinessScope(
             await this.compositionRepository.findByNormalizedName(normalizedName),
-            restaurantId
+            restaurantId,
+            scope
         );
 
         if (duplicates.length > 0) {
@@ -22,7 +28,7 @@ class CompositionService {
 
         const now = new Date().toISOString();
         const ref = this.compositionRepository.createRef();
-        const composition = CompositionEntity.create(withRestaurantScope({
+        const composition = CompositionEntity.create(withBusinessScope({
             id: ref.id,
             name: payload.name,
             normalized_name: normalizedName,
@@ -32,16 +38,20 @@ class CompositionService {
             is_active: payload.is_active ?? true,
             createdAt: now,
             updatedAt: now
-        }, restaurantId));
+        }, restaurantId, scope));
 
         await this.compositionRepository.create(ref.id, composition);
         return composition;
     }
 
-    async list(query, restaurantId) {
+    async list(query, restaurantId, scope = {}) {
         const search = typeof query.search === 'string' ? query.search.trim() : '';
         const allergenOnly = query.is_allergen === 'true';
-        let compositions = filterByRestaurantScope(await this.compositionRepository.listAll(), restaurantId);
+        let compositions = filterByBusinessScope(
+            await this.compositionRepository.listScoped(scope, restaurantId),
+            restaurantId,
+            scope
+        );
 
         if (allergenOnly) {
             compositions = compositions.filter((item) => item.is_allergen === true);
@@ -61,17 +71,18 @@ class CompositionService {
         return compositions.map((item) => CompositionEntity.create(item));
     }
 
-    async getById(id, restaurantId) {
+    async getById(id, restaurantId, scope = {}) {
         const composition = await this.compositionRepository.findById(id);
-        if (!composition || !matchesRestaurantScope(composition, restaurantId)) {
+        if (!composition || !matchesBusinessScope(composition, restaurantId, scope)) {
             throw new AppError('Composition introuvable', 404);
         }
 
+        assertBranchOwnership(composition, scope, { collection: 'compositions' });
         return CompositionEntity.create(composition);
     }
 
-    async update(id, payload, restaurantId) {
-        await this.getById(id, restaurantId);
+    async update(id, payload, restaurantId, scope = {}) {
+        await this.getById(id, restaurantId, scope);
 
         const updates = {
             ...payload,
@@ -80,9 +91,10 @@ class CompositionService {
 
         if (updates.name) {
             const normalizedName = normalizeName(updates.name);
-            const duplicates = filterByRestaurantScope(
+            const duplicates = filterByBusinessScope(
                 await this.compositionRepository.findByNormalizedName(normalizedName),
-                restaurantId
+                restaurantId,
+                scope
             ).filter((item) => item.id !== id);
 
             if (duplicates.length > 0) {
@@ -95,8 +107,8 @@ class CompositionService {
         return CompositionEntity.create(await this.compositionRepository.update(id, updates));
     }
 
-    async delete(id, restaurantId) {
-        await this.getById(id, restaurantId);
+    async delete(id, restaurantId, scope = {}) {
+        await this.getById(id, restaurantId, scope);
 
         if (await this.compositionRepository.hasLinkedMenuItems(id)) {
             throw new AppError(

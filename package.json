@@ -10,7 +10,8 @@
     "migrate:menu-taxonomy": "node scripts/migrate-menu-item-taxonomy.js",
     "migrate:add-tenant": "node scripts/migrate-add-tenant.js",
     "migrate:create-restaurants": "node scripts/migrate-create-restaurants.js",
-    "test": "exit 0"
+    "migrate:to-organizations": "node scripts/migrate-to-organizations.js",
+    "test": "jest --runInBand"
   },
   "keywords": [],
   "author": "",

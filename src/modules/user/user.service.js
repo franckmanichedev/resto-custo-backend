@@ -1,5 +1,10 @@
 const AppError = require('../../shared/errors/AppError');
 const UserEntity = require('../../core/entities/User');
+const {
+    assertCanSwitchBranch,
+    resolveUserAccessContext
+} = require('../../shared/utils/accessControl');
+const { isMultiBranchUsersEnabled } = require('../../shared/utils/featureFlags');
 
 const TENANT_KEYS = ['tenant_id', 'tenantId', 'restaurant_id', 'restaurantId'];
 
@@ -102,6 +107,46 @@ class UserService {
         });
 
         return UserEntity.create(updatedUser);
+    }
+
+    async switchActiveBranch(authenticatedUser, payload = {}) {
+        if (!isMultiBranchUsersEnabled()) {
+            throw new AppError('Le multi-branch users est desactive', 403);
+        }
+
+        const userId = authenticatedUser?.uid || authenticatedUser?.id;
+        if (!userId) {
+            throw new AppError('Utilisateur authentifie introuvable', 400);
+        }
+
+        const organizationId = payload.organizationId || payload.organization_id || authenticatedUser.activeOrganizationId;
+        const branchId = payload.branchId || payload.branch_id;
+        if (!organizationId || !branchId) {
+            throw new AppError('organizationId et branchId sont requis', 400);
+        }
+
+        const user = await this.userRepository.findById(userId);
+        if (!user) {
+            throw new AppError('Utilisateur non trouve', 404);
+        }
+
+        assertCanSwitchBranch(user, organizationId, branchId);
+
+        const updatedUser = await this.userRepository.update(userId, {
+            activeOrganizationId: organizationId,
+            activeBranchId: branchId,
+            accessContextRefreshedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        });
+
+        return {
+            user: UserEntity.create(updatedUser),
+            access: resolveUserAccessContext(updatedUser, { organizationId, branchId }),
+            realtime: {
+                event: 'access_context_refreshed',
+                room: `user_${userId}`
+            }
+        };
     }
 }
 

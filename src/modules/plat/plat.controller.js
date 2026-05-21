@@ -7,7 +7,7 @@ class PlatController {
 
     createPlat = async (req, res, next) => {
         try {
-            const data = await this.platService.create(req.body, req.file, resolveRestaurantId(req));
+            const data = await this.platService.create(req.body, req.file, resolveRestaurantId(req), req.saas);
             res.status(201).json({ success: true, message: 'Plat cree avec succes', data });
         } catch (error) {
             next(error);
@@ -16,7 +16,7 @@ class PlatController {
 
     listPlats = async (req, res, next) => {
         try {
-            const data = await this.platService.list(req.query, resolveRestaurantId(req));
+            const data = await this.platService.list(req.query, resolveRestaurantId(req), { scope: req.saas });
             res.status(200).json({ success: true, count: data.length, data });
         } catch (error) {
             next(error);
@@ -25,7 +25,7 @@ class PlatController {
 
     getPlatById = async (req, res, next) => {
         try {
-            const data = await this.platService.getById(req.params.id, resolveRestaurantId(req));
+            const data = await this.platService.getById(req.params.id, resolveRestaurantId(req), { scope: req.saas });
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -34,7 +34,7 @@ class PlatController {
 
     updatePlat = async (req, res, next) => {
         try {
-            const data = await this.platService.update(req.params.id, req.body, req.file, resolveRestaurantId(req));
+            const data = await this.platService.update(req.params.id, req.body, req.file, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Plat mis a jour avec succes', data });
         } catch (error) {
             next(error);
@@ -43,7 +43,7 @@ class PlatController {
 
     deletePlat = async (req, res, next) => {
         try {
-            await this.platService.delete(req.params.id, resolveRestaurantId(req));
+            await this.platService.delete(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Plat supprime avec succes' });
         } catch (error) {
             next(error);
@@ -52,7 +52,7 @@ class PlatController {
 
     togglePlatAvailability = async (req, res, next) => {
         try {
-            const data = await this.platService.toggleAvailability(req.params.id, resolveRestaurantId(req));
+            const data = await this.platService.toggleAvailability(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Disponibilite mise a jour avec succes', data });
         } catch (error) {
             next(error);

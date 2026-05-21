@@ -5,6 +5,7 @@ const {
     MENU_ITEMS
 } = require('../../shared/constants/collections');
 const { serializeDoc, toFirestoreData } = require('../../shared/utils/firestore');
+const { buildScopedFirestoreQuery } = require('../../shared/utils/scopedFirestore');
 
 class CategoryRepository {
     constructor(firestore = db) {
@@ -26,9 +27,43 @@ class CategoryRepository {
         return snapshot.docs.map(serializeDoc);
     }
 
+    async listCategoriesScoped(scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.categoryCollection,
+                scope: { ...scope, restaurantId },
+                orderBy: [['name', 'asc']]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) {
+                return this.listCategories();
+            }
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listCategories();
+        }
+    }
+
     async listTypeCategories() {
         const snapshot = await this.typeCategoryCollection.orderBy('name').get();
         return snapshot.docs.map(serializeDoc);
+    }
+
+    async listTypeCategoriesScoped(scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.typeCategoryCollection,
+                scope: { ...scope, restaurantId },
+                orderBy: [['name', 'asc']]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) {
+                return this.listTypeCategories();
+            }
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listTypeCategories();
+        }
     }
 
     async findCategoryById(id) {

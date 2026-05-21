@@ -2,7 +2,13 @@ const AppError = require('../../shared/errors/AppError');
 const OrderEntity = require('../../core/entities/Order');
 const { ACTIVE_ORDER_STATUSES, ALLOWED_ORDER_STATUSES } = require('../../shared/constants/business');
 const { buildSessionPayload, buildPreparationState } = require('../../core/use-cases/orderFlow');
-const { filterByRestaurantScope, matchesRestaurantScope, withRestaurantScope } = require('../../shared/utils/tenant');
+const {
+    assertBranchOwnership,
+    createScopeFromEntity,
+    filterByBusinessScope,
+    matchesBusinessScope,
+    withBusinessScope
+} = require('../../shared/utils/scopedFirestore');
 const { isNonEmptyString } = require('../../shared/utils/normalizers');
 const socketHelper = require('../../shared/socket');
 
@@ -11,29 +17,40 @@ class OrderService {
         this.orderRepository = orderRepository;
     }
 
+    getRealtimeRooms(restaurantId, scope = {}, channel = 'kitchen') {
+        const rooms = new Set([restaurantId ? `restaurant_${restaurantId}_${channel}` : channel]);
+        if (scope.organizationId && scope.branchId) {
+            rooms.add(`branch_${scope.organizationId}_${scope.branchId}_${channel}`);
+        }
+        return [...rooms];
+    }
+
     // Construction d'un résumé de commande avec tous les détails nécessaires pour l'affichage et la gestion
-    async buildOrderSummary(orderOrId, restaurantId) {
+    async buildOrderSummary(orderOrId, restaurantId, scope = {}) {
         // Si on reçoit un ID, on récupère la commande complète depuis le repository, sinon on utilise directement l'objet fourni
         const order = typeof orderOrId === 'string'
             ? await this.orderRepository.findOrderById(orderOrId)
             : orderOrId;
 
         // Vérification de l'existence de la commande et de son appartenance au restaurant (tenant) courant
-        if (!order || !matchesRestaurantScope(order, restaurantId)) {
+        const effectiveScope = createScopeFromEntity(order || {}, scope);
+        if (!order || !matchesBusinessScope(order, restaurantId, effectiveScope)) {
             throw new AppError('Commande introuvable', 404);
         }
+        assertBranchOwnership(order, effectiveScope, { collection: 'commandes' });
 
         // Récupération parallèle des données liées à la commande : client, table, session et items
         const [customer, table, session, itemDocs] = await Promise.all([
             order.client_id ? this.orderRepository.findCustomerById(order.client_id) : null,
             order.table_id ? this.orderRepository.findTableById(order.table_id) : null,
             order.session_id ? this.orderRepository.findSessionById(order.session_id) : null,
-            this.orderRepository.listOrderItems(order.id)
+            this.orderRepository.listOrderItemsScoped(order.id, effectiveScope, restaurantId)
         ]);
+        const scopedItemDocs = filterByBusinessScope(itemDocs, restaurantId, effectiveScope);
 
         // Récupération des actions de composition pour les items de la commande
         const actionDocsByItemId = await this.orderRepository.listOrderItemCompositionsBatch(
-            itemDocs.map((item) => item.id)
+            scopedItemDocs.map((item) => item.id)
         );
 
         // Extraction des IDs de compositions uniques à partir des actions pour faire une requête optimisée
@@ -42,11 +59,15 @@ class OrderService {
         )];
 
         // Récupération des détails des compositions en une seule requête pour éviter les requêtes N+1
-        const compositions = await this.orderRepository.findCompositionsByIds(compositionIds);
+        const compositions = filterByBusinessScope(
+            await this.orderRepository.findCompositionsByIds(compositionIds),
+            restaurantId,
+            effectiveScope
+        );
         const compositionMap = new Map(compositions.map((item) => [item.id, item]));
 
         // Construction de la liste des items de la commande avec tous les détails nécessaires pour l'affichage et le suivi de la préparation
-        const items = itemDocs.map((item) => {
+        const items = scopedItemDocs.map((item) => {
             // Calcul de l'état de préparation de chaque item en fonction de son statut, des temps estimés et des temps de préparation
             const timing = buildPreparationState({
                 status: order.status,
@@ -60,10 +81,11 @@ class OrderService {
                 ...item,
                 total_price: (item.plat_price || 0) * (item.quantity || 0),
                 ...timing,
-                compositions: (actionDocsByItemId.get(item.id) || []).map((action) => ({
-                    ...action,
-                    composition_name: compositionMap.get(action.composition_id)?.name || action.composition_id
-                }))
+                compositions: filterByBusinessScope(actionDocsByItemId.get(item.id) || [], restaurantId, effectiveScope)
+                    .map((action) => ({
+                        ...action,
+                        composition_name: compositionMap.get(action.composition_id)?.name || action.composition_id
+                    }))
             };
         });
 
@@ -97,21 +119,25 @@ class OrderService {
     }
 
     // Liste des commandes avec possibilité de filtrer par statut et de s'assurer que seules les commandes du restaurant courant sont retournées
-    async listOrders(query, restaurantId) {
+    async listOrders(query, restaurantId, scope = {}) {
         const statusFilter = typeof query.status === 'string' ? query.status.trim().toLowerCase() : '';
-        const orders = filterByRestaurantScope(await this.orderRepository.listOrders(), restaurantId)
+        const orders = filterByBusinessScope(
+            await this.orderRepository.listOrdersScoped(scope, restaurantId),
+            restaurantId,
+            scope
+        )
             .filter((order) => !statusFilter || order.status === statusFilter);
 
-        return Promise.all(orders.map((order) => this.buildOrderSummary(order, restaurantId)));
+        return Promise.all(orders.map((order) => this.buildOrderSummary(order, restaurantId, scope)));
     }
 
     // Récupération d'une commande par ID avec tous les détails nécessaires pour l'affichage et la gestion
-    async getById(id, restaurantId) {
-        return this.buildOrderSummary(id, restaurantId);
+    async getById(id, restaurantId, scope = {}) {
+        return this.buildOrderSummary(id, restaurantId, scope);
     }
 
     // Mise à jour du statut d'une commande avec validation du statut, vérification de l'existence de la commande et de son appartenance au restaurant, et mise à jour des temps de préparation des items si nécessaire
-    async updateStatus(id, status, restaurantId) {
+    async updateStatus(id, status, restaurantId, scope = {}) {
         // Validation du statut fourni pour s'assurer qu'il est parmi les statuts autorisés et éviter les erreurs de logique métier
         if (!ALLOWED_ORDER_STATUSES.includes(status)) {
             throw new AppError('Statut invalide', 400);
@@ -119,9 +145,11 @@ class OrderService {
 
         // Récupération de la commande pour vérifier son existence et son appartenance au restaurant avant de procéder à la mise à jour
         const currentOrder = await this.orderRepository.findOrderById(id);
-        if (!currentOrder || !matchesRestaurantScope(currentOrder, restaurantId)) {
+        const effectiveScope = createScopeFromEntity(currentOrder || {}, scope);
+        if (!currentOrder || !matchesBusinessScope(currentOrder, restaurantId, effectiveScope)) {
             throw new AppError('Commande introuvable', 404);
         }
+        assertBranchOwnership(currentOrder, effectiveScope, { collection: 'commandes' });
 
         // Construction du payload de mise à jour avec les nouveaux statuts et les temps de mise à jour pour assurer une traçabilité et une gestion correcte des états de la commande
         const now = new Date().toISOString();
@@ -132,7 +160,11 @@ class OrderService {
         };
 
         // Si le statut passe à "preparing", on démarre le temps de préparation et on calcule les temps estimés pour chaque item en fonction de leur temps de préparation individuel
-        const items = await this.orderRepository.listOrderItems(currentOrder.id);
+        const items = filterByBusinessScope(
+            await this.orderRepository.listOrderItemsScoped(currentOrder.id, effectiveScope, restaurantId),
+            restaurantId,
+            effectiveScope
+        );
         if (status === 'preparing') {
             updatePayload.preparation_started_at = now;
 
@@ -159,19 +191,20 @@ class OrderService {
         }
 
         await this.orderRepository.updateOrder(id, updatePayload);
-        const summary = await this.buildOrderSummary(id, restaurantId);
+        const summary = await this.buildOrderSummary(id, restaurantId, effectiveScope);
 
         try {
             const io = socketHelper.getIo && socketHelper.getIo();
             if (io) {
-                const room = restaurantId ? `restaurant_${restaurantId}_kitchen` : 'kitchen';
-                io.to(room).emit('order_status_changed', summary);
+                this.getRealtimeRooms(restaurantId, effectiveScope, 'kitchen')
+                    .forEach((room) => io.to(room).emit('order_status_changed', summary));
 
                 // emit lightweight stats update
-                const allOrders = await this.orderRepository.listOrders();
-                const pendingCount = allOrders.filter((o) => (o.status === 'pending') && (!restaurantId || matchesRestaurantScope(o, restaurantId))).length;
-                const statsRoom = restaurantId ? `restaurant_${restaurantId}_dashboard` : 'dashboard';
-                io.to(statsRoom).emit('stats_updated', { pending: pendingCount });
+                const allOrders = await this.orderRepository.listOrdersScoped(effectiveScope, restaurantId);
+                const pendingCount = filterByBusinessScope(allOrders, restaurantId, effectiveScope)
+                    .filter((o) => o.status === 'pending').length;
+                this.getRealtimeRooms(restaurantId, effectiveScope, 'dashboard')
+                    .forEach((room) => io.to(room).emit('stats_updated', { pending: pendingCount }));
             }
         } catch (err) {
             console.warn('socket emit failed', err.message);
@@ -181,7 +214,7 @@ class OrderService {
     }
 
     // Méthode utilitaire pour s'assurer qu'un client existe ou en créer un nouveau à partir des informations fournies, avec validation des données et respect du scope du restaurant
-    async ensureCustomer({ name, phone }, restaurantId) {
+    async ensureCustomer({ name, phone }, restaurantId, scope = {}) {
         // Validation des données d'entrée pour s'assurer que le nom et le numéro de téléphone sont fournis et éviter la création de clients avec des données incomplètes
         if (!isNonEmptyString(name) || !isNonEmptyString(phone)) {
             throw new AppError('Le nom et le numero de telephone du client sont requis', 400);
@@ -192,7 +225,7 @@ class OrderService {
         const existing = await this.orderRepository.findCustomerByPhone(cleanPhone);
         
         // Si un client existe déjà avec ce numéro de téléphone et qu'il appartient au restaurant courant, on le retourne (après éventuellement mettre à jour son nom si celui fourni est différent) pour éviter la création de doublons et permettre la réutilisation des clients existants
-        if (existing && matchesRestaurantScope(existing, restaurantId)) {
+        if (existing && matchesBusinessScope(existing, restaurantId, scope)) {
             if (existing.name !== name.trim()) {
                 return this.orderRepository.updateCustomer(existing.id, { name: name.trim() });
             }
@@ -205,41 +238,50 @@ class OrderService {
         const ref = this.orderRepository.createCustomerRef();
 
         // Création d'un nouveau client avec les informations fournies et le scope du restaurant pour assurer une bonne organisation des données et permettre la réutilisation de ce client pour les commandes futures
-        const customer = withRestaurantScope({
+        const customer = withBusinessScope({
             id: ref.id,
             name: name.trim(),
             phone: cleanPhone,
             created_at: now,
             createdAt: now
-        }, restaurantId);
+        }, restaurantId, scope);
 
         await this.orderRepository.createCustomer(ref.id, customer);
         return customer;
     }
 
     // Liste des commandes d'une session avec tous les détails nécessaires pour l'affichage et la gestion, filtrées par restaurant pour assurer que seules les commandes du restaurant courant sont retournées
-    async listSessionOrdersSummary(sessionId, restaurantId) {
-        const orders = filterByRestaurantScope(await this.orderRepository.listOrdersBySession(sessionId), restaurantId)
+    async listSessionOrdersSummary(sessionId, restaurantId, scope = {}) {
+        const orders = filterByBusinessScope(
+            await this.orderRepository.listOrdersBySessionScoped(sessionId, scope, restaurantId),
+            restaurantId,
+            scope
+        )
             .sort((a, b) => new Date(b.created_at || b.createdAt).getTime() - new Date(a.created_at || a.createdAt).getTime());
 
-        return Promise.all(orders.map((order) => this.buildOrderSummary(order, restaurantId)));
+        return Promise.all(orders.map((order) => this.buildOrderSummary(order, restaurantId, scope)));
     }
 
     // Vérification de l'existence de commandes actives (non terminées) pour une session donnée, filtrées par restaurant pour assurer que seules les commandes du restaurant courant sont prises en compte
-    async hasActiveOrderForSession(sessionId, restaurantId) {
-        const orders = filterByRestaurantScope(await this.orderRepository.listOrdersBySession(sessionId), restaurantId);
+    async hasActiveOrderForSession(sessionId, restaurantId, scope = {}) {
+        const orders = filterByBusinessScope(
+            await this.orderRepository.listOrdersBySessionScoped(sessionId, scope, restaurantId),
+            restaurantId,
+            scope
+        );
         return orders.some((order) => ACTIVE_ORDER_STATUSES.includes(order.status));
     }
 
     // Création d'une commande à partir d'une liste d'items normalisés (avec les détails nécessaires pour la création de la commande et de ses items), avec validation des données, respect du scope du restaurant, et construction de la commande finale avec tous les détails nécessaires pour l'affichage et la gestion dans le système
-    async createOrderFromNormalizedItems({ session, customer, note, normalizedItems, sourceCartId = null, restaurantId }) {
+    async createOrderFromNormalizedItems({ session, customer, note, normalizedItems, sourceCartId = null, restaurantId, scope = {} }) {
         const now = new Date().toISOString();
+        const effectiveScope = createScopeFromEntity(session || {}, scope);
 
         try {
             // On utilise le SDK Firestore via le repository pour démarrer une transaction
             const orderId = await this.orderRepository.firestore.runTransaction(async (transaction) => {
                 const orderRef = this.orderRepository.createOrderRef();
-                const orderData = withRestaurantScope({
+                const orderData = withBusinessScope({
                     id: orderRef.id,
                     session_id: session.id,
                     session_token: session.session_token,
@@ -251,14 +293,14 @@ class OrderService {
                     source_cart_id: sourceCartId,
                     created_at: now,
                     createdAt: now
-                }, restaurantId);
+                }, restaurantId, effectiveScope);
 
                 // 1. Enregistrement de la commande principale
                 transaction.set(orderRef, orderData);
 
                 for (const item of normalizedItems) {
                     const itemRef = this.orderRepository.createOrderItemRef();
-                    const orderItem = {
+                    const orderItem = withBusinessScope({
                         id: itemRef.id,
                         commande_id: orderRef.id,
                         plat_id: item.plat.id,
@@ -275,21 +317,21 @@ class OrderService {
                         preparation_started_at: null,
                         created_at: now,
                         createdAt: now
-                    };
+                    }, restaurantId, effectiveScope);
 
                     // 2. Enregistrement de chaque item de commande
                     transaction.set(itemRef, orderItem);
 
                     for (const action of item.composition_actions) {
                         const actionRef = this.orderRepository.createOrderItemCompositionRef();
-                        const compositionData = {
+                        const compositionData = withBusinessScope({
                             id: actionRef.id,
                             commande_item_id: itemRef.id,
                             composition_id: action.composition_id,
                             action: action.action,
                             created_at: now,
                             createdAt: now
-                        };
+                        }, restaurantId, effectiveScope);
                         // 3. Enregistrement des détails de composition
                         transaction.set(actionRef, compositionData);
                     }
@@ -298,20 +340,21 @@ class OrderService {
             });
 
             // Une fois la transaction validée, on construit le résumé complet
-            const summary = await this.buildOrderSummary(orderId, restaurantId);
+            const summary = await this.buildOrderSummary(orderId, restaurantId, effectiveScope);
 
 
             try {
                 const io = socketHelper.getIo && socketHelper.getIo();
                 if (io) {
-                    const room = restaurantId ? `restaurant_${restaurantId}_kitchen` : 'kitchen';
-                    io.to(room).emit('new_order', summary);
+                    this.getRealtimeRooms(restaurantId, effectiveScope, 'kitchen')
+                        .forEach((room) => io.to(room).emit('new_order', summary));
 
                     // emit lightweight stats update
-                    const allOrders = await this.orderRepository.listOrders();
-                    const pendingCount = allOrders.filter((o) => (o.status === 'pending') && (!restaurantId || matchesRestaurantScope(o, restaurantId))).length;
-                    const statsRoom = restaurantId ? `restaurant_${restaurantId}_dashboard` : 'dashboard';
-                    io.to(statsRoom).emit('stats_updated', { pending: pendingCount });
+                    const allOrders = await this.orderRepository.listOrdersScoped(effectiveScope, restaurantId);
+                    const pendingCount = filterByBusinessScope(allOrders, restaurantId, effectiveScope)
+                        .filter((o) => o.status === 'pending').length;
+                    this.getRealtimeRooms(restaurantId, effectiveScope, 'dashboard')
+                        .forEach((room) => io.to(room).emit('stats_updated', { pending: pendingCount }));
                 }
             } catch (err) {
                 console.warn('socket emit failed', err.message);

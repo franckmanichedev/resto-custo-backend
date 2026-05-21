@@ -7,10 +7,18 @@ const createClientsModule = require('./clients');
 const createPlatModule = require('./plat');
 const createTableModule = require('./table');
 const createSessionModule = require('./session');
+const createOrganizationsModule = require('./organizations');
+const createBranchesModule = require('./branches');
+const createImpersonationModule = require('./impersonation');
 
 module.exports = () => {
     const authModule = createAuthModule();
     const userModule = createUserModule();
+    const organizationsModule = createOrganizationsModule();
+    const branchesModule = createBranchesModule({
+        organizationsRepository: organizationsModule.organizationsRepository
+    });
+    const impersonationModule = createImpersonationModule();
     const compositionModule = createCompositionModule();
     const categoryModule = createCategoryModule();
     const orderModule = createOrderModule();
@@ -31,6 +39,9 @@ module.exports = () => {
     return {
         authModule,
         userModule,
+        organizationsModule,
+        branchesModule,
+        impersonationModule,
         compositionModule,
         categoryModule,
         orderModule,

@@ -2,17 +2,20 @@ const express = require('express');
 const verifyFirebaseToken = require('../../shared/middlewares/verifyFirebaseToken');
 const requireTenantScope = require('../../shared/middlewares/requireTenantScope');
 const validateRequest = require('../../shared/middlewares/validateRequest');
-const { validateProfileUpdate } = require('./user.schema');
+const resolveUserAccessContext = require('../../shared/middlewares/resolveUserAccessContext');
+const { validateProfileUpdate, validateBranchSwitch } = require('./user.schema');
+
+const authAccessContext = [verifyFirebaseToken, requireTenantScope(), resolveUserAccessContext({ allowMissing: true })];
 
 module.exports = ({ userController }) => {
     const router = express.Router();
 
-    router.get('/me', verifyFirebaseToken, requireTenantScope(), userController.getAuthenticatedProfile);
-    router.get('/:id', verifyFirebaseToken, requireTenantScope(), userController.getProfile);
+    router.get('/me', ...authAccessContext, userController.getAuthenticatedProfile);
+    router.post('/me/active-branch', ...authAccessContext, validateRequest(validateBranchSwitch), userController.switchActiveBranch);
+    router.get('/:id', ...authAccessContext, userController.getProfile);
     router.put(
         '/:id',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authAccessContext,
         validateRequest(validateProfileUpdate),
         userController.updateProfile
     );

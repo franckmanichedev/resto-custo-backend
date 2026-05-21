@@ -2,6 +2,11 @@ const { admin } = require('../../infrastructure/firebase/firebaseAdmin');
 const logger = require('../utils/logger');
 const UserRepository = require('../../modules/user/user.repository');
 const { ROLES, normalizeRole } = require('../constants/roles');
+const {
+    resolveUserAccessContext,
+    canAccessOrganization,
+    canAccessBranch
+} = require('../utils/accessControl');
 
 let userRepository = null;
 
@@ -60,6 +65,18 @@ const mapAuthenticatedUser = (decodedToken, userData = null) => {
         phoneNumber: userData?.phoneNumber || null,
         clientType: userData?.clientType || userData?.accountType || 'personal',
         isActive: userData?.isActive,
+        organizationId: userData?.organizationId || userData?.organization_id || null,
+        organization_id: userData?.organization_id || userData?.organizationId || null,
+        organizationIds: userData?.organizationIds || userData?.organization_ids || [],
+        organization_ids: userData?.organization_ids || userData?.organizationIds || [],
+        branchId: userData?.branchId || userData?.branch_id || null,
+        branch_id: userData?.branch_id || userData?.branchId || null,
+        branchIds: userData?.branchIds || userData?.branch_ids || [],
+        branch_ids: userData?.branch_ids || userData?.branchIds || [],
+        organizationMemberships: userData?.organizationMemberships || [],
+        branchMemberships: userData?.branchMemberships || [],
+        activeOrganizationId: userData?.activeOrganizationId || userData?.active_organization_id || null,
+        activeBranchId: userData?.activeBranchId || userData?.active_branch_id || null,
         tenant_id: tenantId,
         tenantId,
         restaurant_id: restaurantId,
@@ -86,7 +103,14 @@ const verifyFirebaseToken = async (req, res, next) => {
             });
         }
 
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const decodedToken = await admin.auth().verifyIdToken(idToken, true);
+        const authUser = await admin.auth().getUser(decodedToken.uid);
+        if (authUser.disabled) {
+            return res.status(403).json({
+                success: false,
+                message: 'Compte desactive'
+            });
+        }
         const user = await getUserRepository().findById(decodedToken.uid);
 
         if (!user) {
@@ -103,7 +127,40 @@ const verifyFirebaseToken = async (req, res, next) => {
             });
         }
 
-        req.user = mapAuthenticatedUser(decodedToken, user);
+        const authenticatedUser = mapAuthenticatedUser(decodedToken, user);
+        const access = resolveUserAccessContext(authenticatedUser);
+        const requestedOrganizationId = req.headers['x-organization-id']
+            || req.query?.organizationId
+            || req.body?.organizationId
+            || null;
+        const requestedBranchId = req.headers['x-branch-id']
+            || req.query?.branchId
+            || req.body?.branchId
+            || null;
+
+        if (requestedOrganizationId && !canAccessOrganization(access, requestedOrganizationId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Acces refuse: organization hors de portee'
+            });
+        }
+
+        if (requestedBranchId && !canAccessBranch(access, requestedOrganizationId || access.activeOrganizationId, requestedBranchId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Acces refuse: branche hors de portee'
+            });
+        }
+
+        if (!access.platformRole && access.activeOrganizationId && !canAccessOrganization(access, access.activeOrganizationId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Acces refuse: membership organization inactif'
+            });
+        }
+
+        req.user = authenticatedUser;
+        req.access = access;
         next();
     } catch (error) {
         logger.error('verifyFirebaseToken error', {

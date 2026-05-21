@@ -5,6 +5,12 @@ const {
     matchesTenantAndRestaurantScope,
     withTenantAndRestaurantScope
 } = require('../../shared/utils/tenant');
+const {
+    assertBranchOwnership,
+    filterByBusinessScope,
+    matchesBusinessScope,
+    withBusinessScope
+} = require('../../shared/utils/scopedFirestore');
 
 const DEFAULT_FRONTEND_URLS = {
     development: 'http://localhost:3000',
@@ -28,27 +34,27 @@ class TableService {
         return `${getFrontendBaseUrl().replace(/\/$/, '')}/client/loading.html?table=${tableId}`;
     }
 
-    async ensureUniqueTableNumber(number, tenantId, restaurantId, excludeId = null) {
-        const matches = filterByTenantAndRestaurantScope(
-            await this.tableRepository.findByNumber(number),
-            tenantId,
-            restaurantId
-        ).filter((table) => table.id !== excludeId);
+    async ensureUniqueTableNumber(number, tenantId, restaurantId, excludeId = null, scope = {}) {
+        const scopedMatches = this.tableRepository.findByNumberScoped
+            ? await this.tableRepository.findByNumberScoped(number, scope, restaurantId)
+            : await this.tableRepository.findByNumber(number);
+        const matches = filterByBusinessScope(scopedMatches, restaurantId, scope)
+            .filter((table) => table.id !== excludeId);
 
         if (matches.length > 0) {
             throw new AppError('Une table avec ce numero existe deja', 409);
         }
     }
 
-    async create(payload, tenantId, restaurantId) {
-        await this.ensureUniqueTableNumber(payload.number, tenantId, restaurantId);
+    async create(payload, tenantId, restaurantId, scope = {}) {
+        await this.ensureUniqueTableNumber(payload.number, tenantId, restaurantId, null, scope);
 
         const now = new Date().toISOString();
         const ref = this.tableRepository.createRef();
         const menuUrl = this.buildTableMenuUrl(ref.id);
         const qrCode = payload.qr_code || menuUrl;
 
-        const table = TableEntity.create(withTenantAndRestaurantScope({
+        const table = TableEntity.create(withBusinessScope(withTenantAndRestaurantScope({
             id: ref.id,
             name: payload.name,
             number: payload.number,
@@ -59,35 +65,36 @@ class TableService {
             updated_at: now,
             createdAt: now,
             updatedAt: now
-        }, tenantId, restaurantId));
+        }, tenantId, restaurantId), restaurantId, scope));
 
         await this.tableRepository.create(ref.id, table);
         return table;
     }
 
-    async list(tenantId, restaurantId) {
-        return filterByTenantAndRestaurantScope(
-            await this.tableRepository.listAll(),
-            tenantId,
-            restaurantId
+    async list(tenantId, restaurantId, scope = {}) {
+        return filterByBusinessScope(
+            await this.tableRepository.listScoped(scope, restaurantId),
+            restaurantId,
+            scope
         ).map((item) => TableEntity.create(item));
     }
 
-    async getById(id, tenantId, restaurantId) {
+    async getById(id, tenantId, restaurantId, scope = {}) {
         const table = await this.tableRepository.findById(id);
 
-        if (!table || !matchesTenantAndRestaurantScope(table, tenantId, restaurantId)) {
+        if (!table || (!matchesBusinessScope(table, restaurantId, scope) && !matchesTenantAndRestaurantScope(table, tenantId, restaurantId))) {
             throw new AppError('Table introuvable', 404);
         }
 
+        assertBranchOwnership(table, scope, { collection: 'tables' });
         return TableEntity.create(table);
     }
 
-    async update(id, payload, tenantId, restaurantId) {
-        await this.getById(id, tenantId, restaurantId);
+    async update(id, payload, tenantId, restaurantId, scope = {}) {
+        await this.getById(id, tenantId, restaurantId, scope);
 
         if (payload.number) {
-            await this.ensureUniqueTableNumber(payload.number, tenantId, restaurantId, id);
+            await this.ensureUniqueTableNumber(payload.number, tenantId, restaurantId, id, scope);
         }
 
         const updates = {
@@ -103,14 +110,14 @@ class TableService {
         return TableEntity.create(await this.tableRepository.update(id, updates));
     }
 
-    async delete(id, tenantId, restaurantId) {
-        await this.getById(id, tenantId, restaurantId);
+    async delete(id, tenantId, restaurantId, scope = {}) {
+        await this.getById(id, tenantId, restaurantId, scope);
         await this.tableRepository.delete(id);
     }
 
-    async getMenu(id, tenantId, restaurantId) {
-        const table = await this.getById(id, tenantId, restaurantId);
-        const catalog = await this.platService.getMenuCatalog(restaurantId, undefined);
+    async getMenu(id, tenantId, restaurantId, scope = {}) {
+        const table = await this.getById(id, tenantId, restaurantId, scope);
+        const catalog = await this.platService.getMenuCatalog(restaurantId, undefined, scope);
 
         return {
             table,
@@ -119,18 +126,18 @@ class TableService {
         };
     }
 
-    async getMenuByQrCode(qrCode, tenantId, restaurantId) {
-        const table = filterByTenantAndRestaurantScope(
+    async getMenuByQrCode(qrCode, tenantId, restaurantId, scope = {}) {
+        const table = filterByBusinessScope(
             await this.tableRepository.findByQrCode(qrCode),
-            tenantId,
-            restaurantId
+            restaurantId,
+            scope
         )[0];
 
         if (!table) {
             throw new AppError('Aucune table ne correspond a ce qr_code', 404);
         }
 
-        return this.getMenu(table.id, tenantId, restaurantId);
+        return this.getMenu(table.id, tenantId, restaurantId, scope);
     }
 }
 

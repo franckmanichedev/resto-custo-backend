@@ -1,9 +1,12 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../shared/middlewares/verifyFirebaseToken');
 const requireTenantScope = require('../../shared/middlewares/requireTenantScope');
+const resolveSaasScope = require('../../shared/middlewares/resolveSaasScope');
 const requireRole = require('../../shared/middlewares/requireRole');
 const validateRequest = require('../../shared/middlewares/validateRequest');
 const { createCompositionSchema, updateCompositionSchema } = require('./composition.schema');
+
+const authBusinessScope = [verifyFirebaseToken, requireTenantScope(), resolveSaasScope({ allowMissing: true })];
 
 module.exports = ({ compositionController }) => {
     const router = express.Router();
@@ -15,8 +18,7 @@ module.exports = ({ compositionController }) => {
     // Création - Admin, Menu Manager
     router.post(
         '/',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authBusinessScope,
         requireRole(['admin', 'menu_manager']),
         validateRequest(createCompositionSchema),
         compositionController.createComposition
@@ -25,8 +27,7 @@ module.exports = ({ compositionController }) => {
     // Mise à jour - Admin, Menu Manager
     router.put(
         '/:id',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authBusinessScope,
         requireRole(['admin', 'menu_manager']),
         validateRequest(updateCompositionSchema),
         compositionController.updateComposition
@@ -35,8 +36,7 @@ module.exports = ({ compositionController }) => {
     // Suppression - Admin uniquement
     router.delete(
         '/:id',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authBusinessScope,
         requireRole(['admin', 'menu_manager']),
         compositionController.deleteComposition
     );

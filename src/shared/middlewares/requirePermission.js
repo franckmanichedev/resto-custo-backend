@@ -22,17 +22,16 @@ const requirePermission = (requiredPermissions, mode = 'any') => {
                 : [requiredPermissions];
 
             let hasAccess = false;
+            const accessPermissions = Array.isArray(req.access?.permissions) ? req.access.permissions : null;
 
             if (mode === 'all') {
-                // L'utilisateur doit avoir toutes les permissions
-                hasAccess = permissions.every(permission => 
-                    hasPermission(req.user.role, permission)
-                );
+                hasAccess = accessPermissions
+                    ? permissions.every(permission => accessPermissions.includes(permission))
+                    : permissions.every(permission => hasPermission(req.user.role, permission));
             } else {
-                // L'utilisateur doit avoir au moins une permission
-                hasAccess = permissions.some(permission => 
-                    hasPermission(req.user.role, permission)
-                );
+                hasAccess = accessPermissions
+                    ? permissions.some(permission => accessPermissions.includes(permission))
+                    : hasAnyPermission(req.user.role, permissions);
             }
 
             if (!hasAccess) {

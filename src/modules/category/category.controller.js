@@ -7,7 +7,7 @@ class CategoryController {
 
     createCategory = async (req, res, next) => {
         try {
-            const data = await this.categoryService.createCategory(req.body, req.file, resolveRestaurantId(req));
+            const data = await this.categoryService.createCategory(req.body, req.file, resolveRestaurantId(req), req.saas);
             res.status(201).json({ success: true, message: 'Categorie creee avec succes', data });
         } catch (error) {
             next(error);
@@ -16,7 +16,7 @@ class CategoryController {
 
     listCategories = async (req, res, next) => {
         try {
-            const data = await this.categoryService.listCategories(req.query, resolveRestaurantId(req));
+            const data = await this.categoryService.listCategories(req.query, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, count: data.length, data });
         } catch (error) {
             next(error);
@@ -25,7 +25,7 @@ class CategoryController {
 
     getCategoryById = async (req, res, next) => {
         try {
-            const data = await this.categoryService.getCategoryById(req.params.id, resolveRestaurantId(req));
+            const data = await this.categoryService.getCategoryById(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -34,7 +34,7 @@ class CategoryController {
 
     updateCategory = async (req, res, next) => {
         try {
-            const data = await this.categoryService.updateCategory(req.params.id, req.body, req.file, resolveRestaurantId(req));
+            const data = await this.categoryService.updateCategory(req.params.id, req.body, req.file, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Categorie mise a jour avec succes', data });
         } catch (error) {
             next(error);
@@ -43,7 +43,7 @@ class CategoryController {
 
     deleteCategory = async (req, res, next) => {
         try {
-            await this.categoryService.deleteCategory(req.params.id, resolveRestaurantId(req));
+            await this.categoryService.deleteCategory(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Categorie supprimee avec succes' });
         } catch (error) {
             next(error);
@@ -52,7 +52,7 @@ class CategoryController {
 
     createTypeCategory = async (req, res, next) => {
         try {
-            const data = await this.categoryService.createTypeCategory(req.body, req.file, resolveRestaurantId(req));
+            const data = await this.categoryService.createTypeCategory(req.body, req.file, resolveRestaurantId(req), req.saas);
             res.status(201).json({ success: true, message: 'Type de categorie cree avec succes', data });
         } catch (error) {
             next(error);
@@ -61,7 +61,7 @@ class CategoryController {
 
     listTypeCategories = async (req, res, next) => {
         try {
-            const data = await this.categoryService.listTypeCategories(req.query, resolveRestaurantId(req));
+            const data = await this.categoryService.listTypeCategories(req.query, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, count: data.length, data });
         } catch (error) {
             next(error);
@@ -70,7 +70,7 @@ class CategoryController {
 
     getTypeCategoryById = async (req, res, next) => {
         try {
-            const data = await this.categoryService.getTypeCategoryById(req.params.id, resolveRestaurantId(req));
+            const data = await this.categoryService.getTypeCategoryById(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -79,7 +79,7 @@ class CategoryController {
 
     updateTypeCategory = async (req, res, next) => {
         try {
-            const data = await this.categoryService.updateTypeCategory(req.params.id, req.body, req.file, resolveRestaurantId(req));
+            const data = await this.categoryService.updateTypeCategory(req.params.id, req.body, req.file, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Type de categorie mis a jour avec succes', data });
         } catch (error) {
             next(error);
@@ -88,7 +88,7 @@ class CategoryController {
 
     deleteTypeCategory = async (req, res, next) => {
         try {
-            await this.categoryService.deleteTypeCategory(req.params.id, resolveRestaurantId(req));
+            await this.categoryService.deleteTypeCategory(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, message: 'Type de categorie supprime avec succes' });
         } catch (error) {
             next(error);

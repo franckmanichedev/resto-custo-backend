@@ -4,7 +4,13 @@ const allowedRoles = [
     ROLES.CUSTOMER,
     ROLES.ADMIN,
     ROLES.MENU_MANAGER,
-    ROLES.KITCHEN_STAFF
+    ROLES.KITCHEN_STAFF,
+    ROLES.ORGANIZATION_OWNER,
+    ROLES.ORGANIZATION_MANAGER,
+    ROLES.BRANCH_MANAGER,
+    ROLES.CASHIER,
+    ROLES.WAITER,
+    ROLES.KITCHEN
 ];
 
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : value);
@@ -73,6 +79,26 @@ const validateProfileUpdate = (payload = {}) => {
     return { value, errors };
 };
 
+const validateBranchSwitch = (payload = {}) => {
+    const errors = [];
+    const value = {};
+
+    if (typeof payload.organizationId !== 'string' || !payload.organizationId.trim()) {
+        errors.push({ field: 'organizationId', message: 'organizationId est requis' });
+    } else {
+        value.organizationId = payload.organizationId.trim();
+    }
+
+    if (typeof payload.branchId !== 'string' || !payload.branchId.trim()) {
+        errors.push({ field: 'branchId', message: 'branchId est requis' });
+    } else {
+        value.branchId = payload.branchId.trim();
+    }
+
+    return { value, errors };
+};
+
 module.exports = {
-    validateProfileUpdate
+    validateProfileUpdate,
+    validateBranchSwitch
 };

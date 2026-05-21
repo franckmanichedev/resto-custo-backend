@@ -13,6 +13,9 @@ module.exports = (modules = {}) => {
     const {
         authModule,
         userModule,
+        organizationsModule,
+        branchesModule,
+        impersonationModule,
         compositionModule,
         categoryModule,
         orderModule,
@@ -35,6 +38,9 @@ module.exports = (modules = {}) => {
             role: req.user?.role || null
         });
     });
+    mountIfAvailable(platformRouter, '/organizations', organizationsModule);
+    mountIfAvailable(platformRouter, '/branches', branchesModule);
+    mountIfAvailable(platformRouter, '/impersonations', impersonationModule);
 
     const restaurantRouter = express.Router();
     mountIfAvailable(restaurantRouter, '/auth', authModule);

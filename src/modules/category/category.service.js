@@ -2,7 +2,12 @@ const AppError = require('../../shared/errors/AppError');
 const CategoryEntity = require('../../core/entities/Category');
 const TypeCategoryEntity = require('../../core/entities/TypeCategory');
 const { normalizeName } = require('../../shared/utils/normalizers');
-const { filterByRestaurantScope, matchesRestaurantScope, withRestaurantScope } = require('../../shared/utils/tenant');
+const {
+    assertBranchOwnership,
+    filterByBusinessScope,
+    matchesBusinessScope,
+    withBusinessScope
+} = require('../../shared/utils/scopedFirestore');
 
 class CategoryService {
     constructor({ categoryRepository, storageService }) {
@@ -10,12 +15,13 @@ class CategoryService {
         this.storageService = storageService;
     }
 
-    async createCategory(payload, file, restaurantId) {
+    async createCategory(payload, file, restaurantId, scope = {}) {
         const name = payload.name.trim();
         const normalizedName = normalizeName(name);
-        const duplicates = filterByRestaurantScope(
+        const duplicates = filterByBusinessScope(
             await this.categoryRepository.findCategoryByNormalizedName(normalizedName, payload.kind),
-            restaurantId
+            restaurantId,
+            scope
         );
 
         if (duplicates.length > 0) {
@@ -28,7 +34,7 @@ class CategoryService {
             ? await this.storageService.uploadBuffer({ file, folder: 'categories', entityId: ref.id })
             : (payload.image_url || '');
 
-        const category = CategoryEntity.create(withRestaurantScope({
+        const category = CategoryEntity.create(withBusinessScope({
             id: ref.id,
             name,
             normalized_name: normalizedName,
@@ -38,17 +44,21 @@ class CategoryService {
             is_active: payload.is_active ?? true,
             createdAt: now,
             updatedAt: now
-        }, restaurantId));
+        }, restaurantId, scope));
 
         await this.categoryRepository.createCategory(ref.id, category);
         return category;
     }
 
-    async listCategories(query, restaurantId) {
+    async listCategories(query, restaurantId, scope = {}) {
         const kindFilter = typeof query.kind === 'string' ? query.kind.trim().toLowerCase() : '';
         const search = typeof query.search === 'string' ? normalizeName(query.search) : '';
 
-        let categories = filterByRestaurantScope(await this.categoryRepository.listCategories(), restaurantId);
+        let categories = filterByBusinessScope(
+            await this.categoryRepository.listCategoriesScoped(scope, restaurantId),
+            restaurantId,
+            scope
+        );
         if (kindFilter) {
             categories = categories.filter((category) => category.kind === kindFilter);
         }
@@ -62,17 +72,18 @@ class CategoryService {
         return categories.map((item) => CategoryEntity.create(item));
     }
 
-    async getCategoryById(id, restaurantId) {
+    async getCategoryById(id, restaurantId, scope = {}) {
         const category = await this.categoryRepository.findCategoryById(id);
-        if (!category || !matchesRestaurantScope(category, restaurantId)) {
+        if (!category || !matchesBusinessScope(category, restaurantId, scope)) {
             throw new AppError('Categorie introuvable', 404);
         }
 
+        assertBranchOwnership(category, scope, { collection: 'categories' });
         return CategoryEntity.create(category);
     }
 
-    async updateCategory(id, payload, file, restaurantId) {
-        const current = await this.getCategoryById(id, restaurantId);
+    async updateCategory(id, payload, file, restaurantId, scope = {}) {
+        const current = await this.getCategoryById(id, restaurantId, scope);
         const updates = { ...payload, updatedAt: new Date().toISOString() };
 
         if (updates.name) {
@@ -81,12 +92,13 @@ class CategoryService {
         }
 
         if (updates.normalized_name || updates.kind) {
-            const duplicates = filterByRestaurantScope(
+            const duplicates = filterByBusinessScope(
                 await this.categoryRepository.findCategoryByNormalizedName(
                     updates.normalized_name || current.normalized_name,
                     updates.kind || current.kind
                 ),
-                restaurantId
+                restaurantId,
+                scope
             ).filter((item) => item.id !== id);
 
             if (duplicates.length > 0) {
@@ -103,8 +115,8 @@ class CategoryService {
         return CategoryEntity.create(await this.categoryRepository.updateCategory(id, updates));
     }
 
-    async deleteCategory(id, restaurantId) {
-        await this.getCategoryById(id, restaurantId);
+    async deleteCategory(id, restaurantId, scope = {}) {
+        await this.getCategoryById(id, restaurantId, scope);
 
         const [hasMenuItems, hasTypeCategories] = await Promise.all([
             this.categoryRepository.hasMenuItemsForCategory(id),
@@ -118,13 +130,14 @@ class CategoryService {
         await this.categoryRepository.deleteCategory(id);
     }
 
-    async createTypeCategory(payload, file, restaurantId) {
-        const category = await this.getCategoryById(payload.categorie_id, restaurantId);
+    async createTypeCategory(payload, file, restaurantId, scope = {}) {
+        const category = await this.getCategoryById(payload.categorie_id, restaurantId, scope);
         const name = payload.name.trim();
         const normalizedName = normalizeName(name);
-        const duplicates = filterByRestaurantScope(
+        const duplicates = filterByBusinessScope(
             await this.categoryRepository.findTypeCategoryByNormalizedName(category.id, normalizedName),
-            restaurantId
+            restaurantId,
+            scope
         );
 
         if (duplicates.length > 0) {
@@ -137,7 +150,7 @@ class CategoryService {
             ? await this.storageService.uploadBuffer({ file, folder: 'type-categories', entityId: ref.id })
             : (payload.image_url || '');
 
-        const typeCategory = TypeCategoryEntity.create(withRestaurantScope({
+        const typeCategory = TypeCategoryEntity.create(withBusinessScope({
             id: ref.id,
             categorie_id: category.id,
             name,
@@ -147,17 +160,21 @@ class CategoryService {
             is_active: payload.is_active ?? true,
             createdAt: now,
             updatedAt: now
-        }, restaurantId));
+        }, restaurantId, scope));
 
         await this.categoryRepository.createTypeCategory(ref.id, typeCategory);
         return typeCategory;
     }
 
-    async listTypeCategories(query, restaurantId) {
+    async listTypeCategories(query, restaurantId, scope = {}) {
         const categoryId = typeof query.categorie_id === 'string' ? query.categorie_id.trim() : '';
         const search = typeof query.search === 'string' ? normalizeName(query.search) : '';
 
-        let items = filterByRestaurantScope(await this.categoryRepository.listTypeCategories(), restaurantId);
+        let items = filterByBusinessScope(
+            await this.categoryRepository.listTypeCategoriesScoped(scope, restaurantId),
+            restaurantId,
+            scope
+        );
         if (categoryId) {
             items = items.filter((item) => item.categorie_id === categoryId);
         }
@@ -171,21 +188,22 @@ class CategoryService {
         return items.map((item) => TypeCategoryEntity.create(item));
     }
 
-    async getTypeCategoryById(id, restaurantId) {
+    async getTypeCategoryById(id, restaurantId, scope = {}) {
         const typeCategory = await this.categoryRepository.findTypeCategoryById(id);
-        if (!typeCategory || !matchesRestaurantScope(typeCategory, restaurantId)) {
+        if (!typeCategory || !matchesBusinessScope(typeCategory, restaurantId, scope)) {
             throw new AppError('Type de categorie introuvable', 404);
         }
 
+        assertBranchOwnership(typeCategory, scope, { collection: 'type_categories' });
         return TypeCategoryEntity.create(typeCategory);
     }
 
-    async updateTypeCategory(id, payload, file, restaurantId) {
-        const current = await this.getTypeCategoryById(id, restaurantId);
+    async updateTypeCategory(id, payload, file, restaurantId, scope = {}) {
+        const current = await this.getTypeCategoryById(id, restaurantId, scope);
         const updates = { ...payload, updatedAt: new Date().toISOString() };
 
         if (updates.categorie_id) {
-            await this.getCategoryById(updates.categorie_id, restaurantId);
+            await this.getCategoryById(updates.categorie_id, restaurantId, scope);
         }
 
         if (updates.name) {
@@ -196,9 +214,10 @@ class CategoryService {
         if (updates.normalized_name || updates.categorie_id) {
             const targetCategoryId = updates.categorie_id || current.categorie_id;
             const targetNormalizedName = updates.normalized_name || current.normalized_name;
-            const duplicates = filterByRestaurantScope(
+            const duplicates = filterByBusinessScope(
                 await this.categoryRepository.findTypeCategoryByNormalizedName(targetCategoryId, targetNormalizedName),
-                restaurantId
+                restaurantId,
+                scope
             ).filter((item) => item.id !== id);
 
             if (duplicates.length > 0) {
@@ -213,8 +232,8 @@ class CategoryService {
         return TypeCategoryEntity.create(await this.categoryRepository.updateTypeCategory(id, updates));
     }
 
-    async deleteTypeCategory(id, restaurantId) {
-        await this.getTypeCategoryById(id, restaurantId);
+    async deleteTypeCategory(id, restaurantId, scope = {}) {
+        await this.getTypeCategoryById(id, restaurantId, scope);
         if (await this.categoryRepository.hasMenuItemsForTypeCategory(id)) {
             throw new AppError('Impossible de supprimer ce type de categorie car il est encore utilise', 409);
         }

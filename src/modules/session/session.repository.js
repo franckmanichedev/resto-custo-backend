@@ -6,6 +6,7 @@ const {
     CART_ITEM_COMPOSITIONS
 } = require('../../shared/constants/collections');
 const { serializeDoc, toFirestoreData } = require('../../shared/utils/firestore');
+const { buildScopedFirestoreQuery } = require('../../shared/utils/scopedFirestore');
 
 class SessionRepository {
     constructor(firestore = db) {
@@ -22,6 +23,21 @@ class SessionRepository {
     async listSessionsByTable(tableId) {
         const snapshot = await this.sessionCollection.where('table_id', '==', tableId).get();
         return snapshot.docs.map(serializeDoc);
+    }
+
+    async listSessionsByTableScoped(tableId, scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.sessionCollection,
+                scope: { ...scope, restaurantId },
+                filters: [['table_id', '==', tableId]]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listSessionsByTable(tableId);
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listSessionsByTable(tableId);
+        }
     }
 
     async findSessionById(id) {
@@ -54,6 +70,21 @@ class SessionRepository {
         return snapshot.docs.map(serializeDoc);
     }
 
+    async listCartsBySessionScoped(sessionId, scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.cartCollection,
+                scope: { ...scope, restaurantId },
+                filters: [['table_session_id', '==', sessionId]]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listCartsBySession(sessionId);
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listCartsBySession(sessionId);
+        }
+    }
+
     async findCartById(id) {
         const doc = await this.cartCollection.doc(id).get();
         return doc.exists ? serializeDoc(doc) : null;
@@ -77,6 +108,21 @@ class SessionRepository {
     async listCartItems(cartId) {
         const snapshot = await this.cartItemCollection.where('panier_id', '==', cartId).get();
         return snapshot.docs.map(serializeDoc);
+    }
+
+    async listCartItemsScoped(cartId, scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.cartItemCollection,
+                scope: { ...scope, restaurantId },
+                filters: [['panier_id', '==', cartId]]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listCartItems(cartId);
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listCartItems(cartId);
+        }
     }
 
     async findCartItemById(id) {
@@ -108,6 +154,21 @@ class SessionRepository {
         return snapshot.docs.map(serializeDoc);
     }
 
+    async listCartItemCompositionsScoped(cartItemId, scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.cartItemCompositionCollection,
+                scope: { ...scope, restaurantId },
+                filters: [['panier_item_id', '==', cartItemId]]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listCartItemCompositions(cartItemId);
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listCartItemCompositions(cartItemId);
+        }
+    }
+
     async listCartItemCompositionsBatch(cartItemIds) {
         const uniqueIds = [...new Set((cartItemIds || []).filter(Boolean))];
         if (!uniqueIds.length) return new Map();
@@ -133,7 +194,7 @@ class SessionRepository {
         await Promise.all(actions.map((action) => this.cartItemCompositionCollection.doc(action.id).delete()));
     }
 
-    async replaceCartItemCompositions(cartItemId, actions) {
+    async replaceCartItemCompositions(cartItemId, actions, scope = {}, restaurantId = null) {
         await this.deleteCartItemCompositions(cartItemId);
 
         for (const action of actions) {
@@ -143,6 +204,12 @@ class SessionRepository {
                 panier_item_id: cartItemId,
                 composition_id: action.composition_id,
                 action: action.action,
+                organizationId: action.organizationId || scope.organizationId || null,
+                branchId: action.branchId || scope.branchId || null,
+                tenantId: action.tenantId || restaurantId || null,
+                tenant_id: action.tenant_id || restaurantId || null,
+                restaurantId: action.restaurantId || restaurantId || null,
+                restaurant_id: action.restaurant_id || restaurantId || null,
                 created_at: action.created_at,
                 createdAt: action.createdAt
             }));

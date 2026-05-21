@@ -2,7 +2,12 @@ const AppError = require('../../shared/errors/AppError');
 const PlatEntity = require('../../core/entities/Plat');
 const CompositionEntity = require('../../core/entities/Composition');
 const { normalizeName, normalizeKind } = require('../../shared/utils/normalizers');
-const { filterByRestaurantScope, matchesRestaurantScope, withRestaurantScope } = require('../../shared/utils/tenant');
+const {
+    assertBranchOwnership,
+    filterByBusinessScope,
+    matchesBusinessScope,
+    withBusinessScope
+} = require('../../shared/utils/scopedFirestore');
 const {
     getCurrentWeekDay,
     isMenuItemAvailableForDay,
@@ -18,7 +23,7 @@ class PlatService {
         this.storageService = storageService;
     }
 
-    async getMenuItemCompositions(menuItemId, restaurantId) {
+    async getMenuItemCompositions(menuItemId, restaurantId, scope = {}) {
         const links = await this.platRepository.listCompositionLinks(menuItemId);
         const compositionIds = links
             .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
@@ -27,28 +32,29 @@ class PlatService {
         const compositions = await Promise.all(compositionIds.map((id) => this.compositionRepository.findById(id)));
         return compositions
             .filter(Boolean)
-            .filter((composition) => matchesRestaurantScope(composition, restaurantId))
+            .filter((composition) => matchesBusinessScope(composition, restaurantId, scope))
             .map((composition) => CompositionEntity.create(composition));
     }
 
-    async getCategoryDetails(menuItem, restaurantId) {
+    async getCategoryDetails(menuItem, restaurantId, scope = {}) {
         const [category, typeCategory] = await Promise.all([
             menuItem.categorie_id ? this.categoryRepository.findCategoryById(menuItem.categorie_id) : null,
             menuItem.type_categorie_id ? this.categoryRepository.findTypeCategoryById(menuItem.type_categorie_id) : null
         ]);
 
         return {
-            category: matchesRestaurantScope(category, restaurantId) ? category : null,
-            typeCategory: matchesRestaurantScope(typeCategory, restaurantId) ? typeCategory : null
+            category: matchesBusinessScope(category, restaurantId, scope) ? category : null,
+            typeCategory: matchesBusinessScope(typeCategory, restaurantId, scope) ? typeCategory : null
         };
     }
 
     async buildMenuItemResponse(menuItem, restaurantId, options = {}) {
+        const scope = options.scope || {};
         const currentDay = options.currentDay || getCurrentWeekDay();
         const requestedDay = options.requestedDay || currentDay;
         const [compositions, taxonomy] = await Promise.all([
-            this.getMenuItemCompositions(menuItem.id, restaurantId),
-            this.getCategoryDetails(menuItem, restaurantId)
+            this.getMenuItemCompositions(menuItem.id, restaurantId, scope),
+            this.getCategoryDetails(menuItem, restaurantId, scope)
         ]);
 
         return PlatEntity.create(buildMenuItemView({
@@ -61,20 +67,22 @@ class PlatService {
         }));
     }
 
-    async ensureCompositionExists(selection, restaurantId) {
+    async ensureCompositionExists(selection, restaurantId, scope = {}) {
         if (selection.composition_id) {
             const existing = await this.compositionRepository.findById(selection.composition_id);
-            if (!existing || !matchesRestaurantScope(existing, restaurantId)) {
+            if (!existing || !matchesBusinessScope(existing, restaurantId, scope)) {
                 throw new AppError(`Composition introuvable: ${selection.composition_id}`, 404);
             }
 
+            assertBranchOwnership(existing, scope, { collection: 'compositions' });
             return existing;
         }
 
         const normalizedName = normalizeName(selection.name);
-        const existingMatches = filterByRestaurantScope(
+        const existingMatches = filterByBusinessScope(
             await this.compositionRepository.findByNormalizedName(normalizedName),
-            restaurantId
+            restaurantId,
+            scope
         );
 
         if (existingMatches.length > 0) {
@@ -83,7 +91,7 @@ class PlatService {
 
         const now = new Date().toISOString();
         const ref = this.compositionRepository.createRef();
-        const composition = withRestaurantScope({
+        const composition = withBusinessScope({
             id: ref.id,
             name: selection.name,
             normalized_name: normalizedName,
@@ -93,18 +101,18 @@ class PlatService {
             is_active: true,
             createdAt: now,
             updatedAt: now
-        }, restaurantId);
+        }, restaurantId, scope);
 
         await this.compositionRepository.create(ref.id, composition);
         return composition;
     }
 
-    async syncMenuItemCompositions(menuItemId, selections, restaurantId) {
+    async syncMenuItemCompositions(menuItemId, selections, restaurantId, scope = {}) {
         const resolved = [];
         const seen = new Set();
 
         for (const selection of selections || []) {
-            const composition = await this.ensureCompositionExists(selection, restaurantId);
+            const composition = await this.ensureCompositionExists(selection, restaurantId, scope);
             if (!seen.has(composition.id)) {
                 seen.add(composition.id);
                 resolved.push(composition);
@@ -119,7 +127,7 @@ class PlatService {
         return resolved;
     }
 
-    async create(payload, file, restaurantId) {
+    async create(payload, file, restaurantId, scope = {}) {
         const now = new Date().toISOString();
         const ref = this.platRepository.createRef();
         const compositionSelections = payload.compositionSelections || [];
@@ -128,7 +136,7 @@ class PlatService {
             : (payload.image_url || '');
         const kind = normalizeKind(payload.kind || payload.category || payload.legacy_category);
 
-        const menuItem = PlatEntity.create(withRestaurantScope({
+        const menuItem = PlatEntity.create(withBusinessScope({
             id: ref.id,
             name: payload.name,
             description: payload.description || '',
@@ -151,18 +159,19 @@ class PlatService {
             custom_message_hint: payload.custom_message_hint || '',
             createdAt: now,
             updatedAt: now
-        }, restaurantId));
+        }, restaurantId, scope));
 
         await this.platRepository.create(ref.id, menuItem);
-        const compositions = await this.syncMenuItemCompositions(ref.id, compositionSelections, restaurantId);
+        const compositions = await this.syncMenuItemCompositions(ref.id, compositionSelections, restaurantId, scope);
 
         return this.buildMenuItemResponse({
             ...menuItem,
             is_decomposable: compositions.length > 0 || menuItem.is_decomposable
-        }, restaurantId);
+        }, restaurantId, { scope });
     }
 
     async list(query, restaurantId, options = {}) {
+        const scope = options.scope || {};
         const search = typeof query.search === 'string' ? query.search.trim().toLowerCase() : '';
         const categoryFilter = typeof query.category === 'string' ? query.category.trim().toLowerCase() : '';
         const kindFilter = typeof query.kind === 'string' ? query.kind.trim().toLowerCase() : '';
@@ -176,9 +185,13 @@ class PlatService {
         const currentDay = options.currentDay || getCurrentWeekDay();
         const requestedDay = options.requestedDay || currentDay;
 
-        const rawPlats = filterByRestaurantScope(await this.platRepository.listAll(), restaurantId);
+        const rawPlats = filterByBusinessScope(
+            await this.platRepository.listScoped(scope, restaurantId),
+            restaurantId,
+            scope
+        );
         let plats = await Promise.all(
-            rawPlats.map((item) => this.buildMenuItemResponse(item, restaurantId, { currentDay, requestedDay }))
+            rawPlats.map((item) => this.buildMenuItemResponse(item, restaurantId, { currentDay, requestedDay, scope }))
         );
 
         if (options.onlyAvailableForRequestedDay) {
@@ -260,19 +273,22 @@ class PlatService {
     }
 
     async getById(id, restaurantId, options = {}) {
+        const scope = options.scope || {};
         const plat = await this.platRepository.findById(id);
-        if (!plat || !matchesRestaurantScope(plat, restaurantId)) {
+        if (!plat || !matchesBusinessScope(plat, restaurantId, scope)) {
             throw new AppError('Plat introuvable', 404);
         }
 
+        assertBranchOwnership(plat, scope, { collection: 'menu_items' });
         return this.buildMenuItemResponse(plat, restaurantId, options);
     }
 
-    async update(id, payload, file, restaurantId) {
+    async update(id, payload, file, restaurantId, scope = {}) {
         const existing = await this.platRepository.findById(id);
-        if (!existing || !matchesRestaurantScope(existing, restaurantId)) {
+        if (!existing || !matchesBusinessScope(existing, restaurantId, scope)) {
             throw new AppError('Plat introuvable', 404);
         }
+        assertBranchOwnership(existing, scope, { collection: 'menu_items' });
 
         const updates = { ...payload, updatedAt: new Date().toISOString() };
 
@@ -290,47 +306,49 @@ class PlatService {
         delete updates.compositionSelections;
 
         if (payload.compositionSelections) {
-            const compositions = await this.syncMenuItemCompositions(id, payload.compositionSelections, restaurantId);
+            const compositions = await this.syncMenuItemCompositions(id, payload.compositionSelections, restaurantId, scope);
             updates.is_decomposable = compositions.length > 0 || updates.is_decomposable === true;
         }
 
         await this.platRepository.update(id, updates);
-        return this.getById(id, restaurantId);
+        return this.getById(id, restaurantId, { scope });
     }
 
-    async delete(id, restaurantId) {
+    async delete(id, restaurantId, scope = {}) {
         const existing = await this.platRepository.findById(id);
-        if (!existing || !matchesRestaurantScope(existing, restaurantId)) {
+        if (!existing || !matchesBusinessScope(existing, restaurantId, scope)) {
             throw new AppError('Plat introuvable', 404);
         }
+        assertBranchOwnership(existing, scope, { collection: 'menu_items' });
 
         await this.platRepository.deleteWithLinks(id);
     }
 
-    async toggleAvailability(id, restaurantId) {
+    async toggleAvailability(id, restaurantId, scope = {}) {
         const existing = await this.platRepository.findById(id);
-        if (!existing || !matchesRestaurantScope(existing, restaurantId)) {
+        if (!existing || !matchesBusinessScope(existing, restaurantId, scope)) {
             throw new AppError('Plat introuvable', 404);
         }
+        assertBranchOwnership(existing, scope, { collection: 'menu_items' });
 
         await this.platRepository.update(id, {
             is_available: existing.is_available === false,
             updatedAt: new Date().toISOString()
         });
 
-        return this.getById(id, restaurantId);
+        return this.getById(id, restaurantId, { scope });
     }
 
-    async getMenuCatalog(restaurantId, requestedDay) {
+    async getMenuCatalog(restaurantId, requestedDay, scope = {}) {
         const currentDay = getCurrentWeekDay();
         const effectiveRequestedDay = requestedDay || currentDay;
-        const rawPlats = filterByRestaurantScope(await this.platRepository.listAll(), restaurantId)
+        const rawPlats = filterByBusinessScope(await this.platRepository.listScoped(scope, restaurantId), restaurantId, scope)
             .filter((plat) => plat.is_available !== false);
         const consultableDays = getConsultableDaysFromMenuItems(rawPlats);
         const plats = await Promise.all(
             rawPlats
                 .filter((plat) => isMenuItemAvailableForDay(plat, effectiveRequestedDay))
-                .map((plat) => this.buildMenuItemResponse(plat, restaurantId, { currentDay, requestedDay: effectiveRequestedDay }))
+                .map((plat) => this.buildMenuItemResponse(plat, restaurantId, { currentDay, requestedDay: effectiveRequestedDay, scope }))
         );
 
         return {

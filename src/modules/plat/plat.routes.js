@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const verifyFirebaseToken = require('../../shared/middlewares/verifyFirebaseToken');
 const requireTenantScope = require('../../shared/middlewares/requireTenantScope');
+const resolveSaasScope = require('../../shared/middlewares/resolveSaasScope');
 const requireRole = require('../../shared/middlewares/requireRole');
 const validateRequest = require('../../shared/middlewares/validateRequest');
 const parseMultipartPayload = require('../../shared/middlewares/parseMultipartPayload');
@@ -19,6 +20,8 @@ const upload = multer({
     }
 });
 
+const authBusinessScope = [verifyFirebaseToken, requireTenantScope(), resolveSaasScope({ allowMissing: true })];
+
 module.exports = ({ platController }) => {
     const router = express.Router();
 
@@ -29,8 +32,7 @@ module.exports = ({ platController }) => {
     // Création de plat - Admin, Menu Manager
     router.post(
         '/',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authBusinessScope,
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -41,8 +43,7 @@ module.exports = ({ platController }) => {
     // Mise à jour de plat - Admin, Menu Manager
     router.put(
         '/:id',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authBusinessScope,
         requireRole(['admin', 'menu_manager']),
         upload.single('image'),
         parseMultipartPayload,
@@ -53,8 +54,7 @@ module.exports = ({ platController }) => {
     // Toggle disponibilité - Admin, Menu Manager
     router.patch(
         '/:id/toggle',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authBusinessScope,
         requireRole(['admin', 'menu_manager']),
         platController.togglePlatAvailability
     );
@@ -62,8 +62,7 @@ module.exports = ({ platController }) => {
     // Suppression de plat - Admin uniquement
     router.delete(
         '/:id',
-        verifyFirebaseToken,
-        requireTenantScope(),
+        ...authBusinessScope,
         requireRole(['admin', 'menu_manager']),
         platController.deletePlat
     );

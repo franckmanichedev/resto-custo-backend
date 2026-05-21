@@ -9,6 +9,7 @@ const {
     COMPOSITIONS
 } = require('../../shared/constants/collections');
 const { serializeDoc, toFirestoreData } = require('../../shared/utils/firestore');
+const { buildScopedFirestoreQuery } = require('../../shared/utils/scopedFirestore');
 
 class OrderRepository {
     constructor(firestore = db) {
@@ -43,9 +44,39 @@ class OrderRepository {
         return snapshot.docs.map(serializeDoc);
     }
 
+    async listOrdersScoped(scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.orderCollection,
+                scope: { ...scope, restaurantId },
+                orderBy: [['createdAt', 'desc']]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listOrders();
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listOrders();
+        }
+    }
+
     async listOrdersBySession(sessionId) {
         const snapshot = await this.orderCollection.where('session_id', '==', sessionId).get();
         return snapshot.docs.map(serializeDoc);
+    }
+
+    async listOrdersBySessionScoped(sessionId, scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.orderCollection,
+                scope: { ...scope, restaurantId },
+                filters: [['session_id', '==', sessionId]]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listOrdersBySession(sessionId);
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listOrdersBySession(sessionId);
+        }
     }
 
     async findOrderById(id) {
@@ -69,6 +100,21 @@ class OrderRepository {
         return snapshot.docs.map(serializeDoc);
     }
 
+    async listOrderItemsScoped(orderId, scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.orderItemCollection,
+                scope: { ...scope, restaurantId },
+                filters: [['commande_id', '==', orderId]]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listOrderItems(orderId);
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listOrderItems(orderId);
+        }
+    }
+
     async updateOrderItem(id, payload) {
         await this.orderItemCollection.doc(id).update(toFirestoreData(payload));
         const doc = await this.orderItemCollection.doc(id).get();
@@ -84,6 +130,21 @@ class OrderRepository {
     async listOrderItemCompositions(orderItemId) {
         const snapshot = await this.orderItemCompositionCollection.where('commande_item_id', '==', orderItemId).get();
         return snapshot.docs.map(serializeDoc);
+    }
+
+    async listOrderItemCompositionsScoped(orderItemId, scope = {}, restaurantId = null) {
+        try {
+            const query = buildScopedFirestoreQuery({
+                collection: this.orderItemCompositionCollection,
+                scope: { ...scope, restaurantId },
+                filters: [['commande_item_id', '==', orderItemId]]
+            });
+            const snapshot = await query.get();
+            if (snapshot.empty) return this.listOrderItemCompositions(orderItemId);
+            return snapshot.docs.map(serializeDoc);
+        } catch (error) {
+            return this.listOrderItemCompositions(orderItemId);
+        }
     }
 
     async listOrderItemCompositionsBatch(orderItemIds) {

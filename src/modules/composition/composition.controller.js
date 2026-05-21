@@ -7,7 +7,7 @@ class CompositionController {
 
     createComposition = async (req, res, next) => {
         try {
-            const data = await this.compositionService.create(req.body, resolveRestaurantId(req));
+            const data = await this.compositionService.create(req.body, resolveRestaurantId(req), req.saas);
             res.status(201).json({
                 success: true,
                 message: 'Composition creee avec succes',
@@ -20,7 +20,7 @@ class CompositionController {
 
     listCompositions = async (req, res, next) => {
         try {
-            const data = await this.compositionService.list(req.query, resolveRestaurantId(req));
+            const data = await this.compositionService.list(req.query, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, count: data.length, data });
         } catch (error) {
             next(error);
@@ -29,7 +29,7 @@ class CompositionController {
 
     getCompositionById = async (req, res, next) => {
         try {
-            const data = await this.compositionService.getById(req.params.id, resolveRestaurantId(req));
+            const data = await this.compositionService.getById(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({ success: true, data });
         } catch (error) {
             next(error);
@@ -38,7 +38,7 @@ class CompositionController {
 
     updateComposition = async (req, res, next) => {
         try {
-            const data = await this.compositionService.update(req.params.id, req.body, resolveRestaurantId(req));
+            const data = await this.compositionService.update(req.params.id, req.body, resolveRestaurantId(req), req.saas);
             res.status(200).json({
                 success: true,
                 message: 'Composition mise a jour avec succes',
@@ -51,7 +51,7 @@ class CompositionController {
 
     deleteComposition = async (req, res, next) => {
         try {
-            await this.compositionService.delete(req.params.id, resolveRestaurantId(req));
+            await this.compositionService.delete(req.params.id, resolveRestaurantId(req), req.saas);
             res.status(200).json({
                 success: true,
                 message: 'Composition supprimee avec succes'

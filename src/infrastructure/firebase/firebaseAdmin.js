@@ -22,6 +22,13 @@ let storageBucket = null;
 
 if (isFirebaseConfigured()) {
     if (!admin.apps.length) {
+        console.info('Initializing Firebase Admin', {
+            projectId: serviceAccount.project_id,
+            clientEmail: serviceAccount.client_email,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET,
+            environment: process.env.NODE_ENV || 'development'
+        });
+
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount),
             storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET

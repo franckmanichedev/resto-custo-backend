@@ -14,6 +14,12 @@ const ROLES = {
     PLATFORM_OWNER: 'platform_owner',
     PLATFORM_ADMIN: 'platform_admin',
     PLATFORM_SUPPORT: 'platform_support',
+    ORGANIZATION_OWNER: 'organization_owner', // Rôle de propriétaire d'organisation, accès complet à tous les restaurants d'une organisation
+    ORGANIZATION_MANAGER: 'organization_manager',
+    BRANCH_MANAGER: 'branch_manager', // Rôle de manager de restaurant, accès complet au restaurant et à ses données
+    CASHIER: 'cashier',
+    WAITER: 'waiter', // Rôle de serveur, accès limité aux commandes et tables
+    KITCHEN: 'kitchen', // Rôle de cuisine, accès limité aux commandes et plats
 
     // Tenant / Restaurant - rôles historiques conservés
     ADMIN: 'admin',
@@ -26,6 +32,12 @@ const ROLE_SCOPES = {
     [ROLES.PLATFORM_OWNER]: 'platform',
     [ROLES.PLATFORM_ADMIN]: 'platform',
     [ROLES.PLATFORM_SUPPORT]: 'platform',
+    [ROLES.ORGANIZATION_OWNER]: 'organization',
+    [ROLES.ORGANIZATION_MANAGER]: 'organization',
+    [ROLES.BRANCH_MANAGER]: 'branch',
+    [ROLES.CASHIER]: 'branch',
+    [ROLES.WAITER]: 'branch',
+    [ROLES.KITCHEN]: 'branch',
     [ROLES.ADMIN]: 'tenant',
     [ROLES.MENU_MANAGER]: 'tenant',
     [ROLES.KITCHEN_STAFF]: 'tenant',
@@ -36,6 +48,14 @@ const ROLE_ALIASES = {
     platform_owner: ROLES.PLATFORM_OWNER,
     platform_admin: ROLES.PLATFORM_ADMIN,
     platform_support: ROLES.PLATFORM_SUPPORT,
+    organization_owner: ROLES.ORGANIZATION_OWNER,
+    organization_manager: ROLES.ORGANIZATION_MANAGER,
+    org_owner: ROLES.ORGANIZATION_OWNER,
+    org_manager: ROLES.ORGANIZATION_MANAGER,
+    branch_manager: ROLES.BRANCH_MANAGER,
+    cashier: ROLES.CASHIER,
+    waiter: ROLES.WAITER,
+    kitchen: ROLES.KITCHEN,
     tenant_admin: ROLES.ADMIN,
     tenant_manager: ROLES.MENU_MANAGER,
     tenant_staff: ROLES.KITCHEN_STAFF,
@@ -232,6 +252,64 @@ const PERMISSIONS = {
         'users:update_profile'
     ]
 };
+
+PERMISSIONS[ROLES.ORGANIZATION_OWNER] = PERMISSIONS[ROLES.ADMIN];
+PERMISSIONS[ROLES.ORGANIZATION_MANAGER] = [
+    'plats:create',
+    'plats:read',
+    'plats:update',
+    'plats:delete',
+    'plats:toggle_availability',
+    'compositions:create',
+    'compositions:read',
+    'compositions:update',
+    'compositions:delete',
+    'categories:create',
+    'categories:read',
+    'categories:update',
+    'categories:delete',
+    'type_categories:create',
+    'type_categories:read',
+    'type_categories:update',
+    'type_categories:delete',
+    'tables:create',
+    'tables:read',
+    'tables:update',
+    'tables:delete',
+    'orders:read',
+    'orders:update_status',
+    'orders:analytics',
+    'users:read',
+    'users:update',
+    'restaurant:read',
+    'restaurant:update',
+    'restaurant:view_analytics',
+    'restaurant:view_revenue'
+];
+PERMISSIONS[ROLES.BRANCH_MANAGER] = PERMISSIONS[ROLES.MENU_MANAGER];
+PERMISSIONS[ROLES.CASHIER] = [
+    'plats:read',
+    'categories:read',
+    'type_categories:read',
+    'tables:read',
+    'orders:create_own',
+    'orders:read',
+    'orders:update_status',
+    'cart:create',
+    'cart:read',
+    'cart:update',
+    'cart:delete'
+];
+PERMISSIONS[ROLES.WAITER] = [
+    'plats:read',
+    'categories:read',
+    'type_categories:read',
+    'tables:read',
+    'orders:create_own',
+    'orders:read',
+    'orders:update_status'
+];
+PERMISSIONS[ROLES.KITCHEN] = PERMISSIONS[ROLES.KITCHEN_STAFF];
 
 /**
  * Mappe les actions/endpoints aux permissions requises

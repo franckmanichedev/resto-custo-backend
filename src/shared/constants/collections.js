@@ -15,5 +15,12 @@ module.exports = {
     CARTS: 'paniers',
     CART_ITEMS: 'panier_items',
     CART_ITEM_COMPOSITIONS: 'panier_item_compositions',
-    RESTAURANTS: 'restaurants'
+    RESTAURANTS: 'restaurants',
+    ORGANIZATIONS: 'organizations',
+    BRANCHES: 'branches',
+    TENANT_MIGRATIONS: 'tenant_migrations',
+    AUTH_LOGS: 'auth_logs',
+    EMAIL_EVENTS: 'email_events',
+    STAFF_INVITATIONS: 'staff_invitations',
+    IMPERSONATION_LOGS: 'impersonation_logs'
 };
